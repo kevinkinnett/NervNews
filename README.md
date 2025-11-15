@@ -17,8 +17,9 @@ the results in SQLite for downstream processing.
   ```
 
 - **GPU & LLM acceleration** – NervNews runs on CPU-only hosts but benefits from
-  a CUDA capable GPU when serving larger llama.cpp models. See
-  [`docs/ops.md`](docs/ops.md) for driver, CUDA, and quantisation guidance.
+  a CUDA capable GPU when serving larger Ollama models. Ensure the Ollama daemon
+  is running with your chosen model (for example `ollama pull qwen3:30b`) and
+  see [`docs/ops.md`](docs/ops.md) for runtime guidance.
 
 - **Configuration** – Edit `config/settings.yaml` (or point
   `NERVNEWS_SETTINGS` at an alternate file). The default configuration stores
@@ -79,8 +80,9 @@ into a single image. `docker-compose.yml` wires three containers together:
 - `scheduler` – background ingestion and summarisation runner.
 - `web` – dashboard-focused instance listening on port 8080.
 
-All services mount `./config`, `./models`, and `./data` so that model weights
-and the SQLite database persist between restarts.
+All services mount `./config` and `./data` so that configuration and the SQLite
+database persist between restarts. Ollama stores model weights separately in its
+own data directory.
 
 ```bash
 docker compose up --build
@@ -100,7 +102,7 @@ back-pressure controls for bursty feed updates.
 
 `config/seed.example.yaml` contains a ready-to-use template that mirrors the
 expected YAML structure. Copy it to a new environment and adjust feed URLs,
-model paths, and the user profile text before the first run.
+model names, and the user profile text before the first run.
 
 ## Relevance grading and user profile
 

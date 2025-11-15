@@ -29,15 +29,14 @@ class FeedSettings:
 class LLMSettings:
     """Configuration for the local LLM backend used for enrichment."""
 
-    provider: str = "llama_cpp"
-    model_path: str = "models/model.gguf"
-    quantization: Optional[str] = None
+    provider: str = "ollama"
+    model: str = "qwen3:30b"
+    base_url: str = "http://127.0.0.1:11434"
     context_window: int = 4096
     max_output_tokens: int = 256
     temperature: float = 0.2
     top_p: float = 0.95
     repeat_penalty: float = 1.1
-    threads: Optional[int] = None
     max_retries: int = 3
 
 
@@ -109,19 +108,17 @@ def _parse_llm(entry: Dict[str, Any]) -> LLMSettings:
     if not isinstance(entry, dict):
         raise SettingsError("'llm' must be a mapping of configuration values")
 
-    threads_value = entry.get("threads")
-    threads = None if threads_value in (None, "") else int(threads_value)
+    model_value = entry.get("model") or entry.get("model_path") or "qwen3:30b"
 
     return LLMSettings(
-        provider=str(entry.get("provider", "llama_cpp")),
-        model_path=str(entry.get("model_path", "models/model.gguf")),
-        quantization=entry.get("quantization"),
+        provider=str(entry.get("provider", "ollama")),
+        model=str(model_value),
+        base_url=str(entry.get("base_url", "http://127.0.0.1:11434")),
         context_window=int(entry.get("context_window", 4096)),
         max_output_tokens=int(entry.get("max_output_tokens", 256)),
         temperature=float(entry.get("temperature", 0.2)),
         top_p=float(entry.get("top_p", 0.95)),
         repeat_penalty=float(entry.get("repeat_penalty", 1.1)),
-        threads=threads,
         max_retries=int(entry.get("max_retries", 3)),
     )
 

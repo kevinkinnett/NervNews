@@ -1,12 +1,11 @@
-"""LLM client wrapper for invoking local llama.cpp compatible models."""
+"""LLM client wrapper for invoking local Ollama compatible models."""
 from __future__ import annotations
 
 import json
 import logging
 import re
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple, Type
 
 from src.config.settings import LLMSettings
 from src.llm.prompts import JsonPromptTemplate
@@ -24,11 +23,10 @@ class _RuntimeConfig:
     temperature: float
     top_p: float
     repeat_penalty: float
-    n_threads: Optional[int]
 
 
 class LLMClient:
-    """Simple wrapper that talks to a local ``llama.cpp`` compatible model."""
+    """Simple wrapper that talks to a local Ollama runtime."""
 
     def __init__(self, settings: LLMSettings) -> None:
         self._settings = settings
@@ -37,16 +35,16 @@ class LLMClient:
             temperature=settings.temperature,
             top_p=settings.top_p,
             repeat_penalty=settings.repeat_penalty,
-            n_threads=settings.threads,
         )
-        self._model: Any = None
+        self._client: Optional[Any] = None
+        self._client_error: Optional[Type[Exception]] = None
 
     @property
     def settings(self) -> LLMSettings:
         return self._settings
 
     def update_settings(self, settings: LLMSettings) -> None:
-        """Update runtime settings and reset the loaded model if required."""
+        """Update runtime settings and reset the client if required."""
 
         if settings == self._settings:
             return
@@ -55,8 +53,8 @@ class LLMClient:
             "Updating LLM client configuration (provider=%s -> %s, model=%s -> %s)",
             self._settings.provider,
             settings.provider,
-            self._settings.model_path,
-            settings.model_path,
+            self._settings.model,
+            settings.model,
         )
         self._settings = settings
         self._runtime = _RuntimeConfig(
@@ -64,41 +62,34 @@ class LLMClient:
             temperature=settings.temperature,
             top_p=settings.top_p,
             repeat_penalty=settings.repeat_penalty,
-            n_threads=settings.threads,
         )
-        # Reset cached model so it reloads with the new parameters lazily.
-        self._model = None
+        # Reset cached client so it reloads with the new parameters lazily.
+        self._client = None
+        self._client_error = None
 
-    def _load_model(self) -> Any:  # pragma: no cover - heavy dependency
-        if self._model is not None:
-            return self._model
-
-        model_path = Path(self._settings.model_path)
-        if not model_path.exists():
-            raise LLMClientError(f"Model path {model_path} does not exist")
+    def _get_client(self) -> Tuple[Any, Type[Exception]]:  # pragma: no cover - heavy dependency
+        if self._client is not None and self._client_error is not None:
+            return self._client, self._client_error
 
         try:
-            from llama_cpp import Llama
+            from ollama import Client, ResponseError
         except Exception as exc:  # pragma: no cover - import time failure
-            raise LLMClientError("llama-cpp-python is not available") from exc
+            raise LLMClientError("ollama Python client is not available") from exc
 
         logger.info(
-            "Loading LLM model from %s (provider=%s, quantization=%s)",
-            model_path,
+            "Connecting to Ollama runtime at %s (provider=%s, model=%s)",
+            self._settings.base_url,
             self._settings.provider,
-            self._settings.quantization or "auto",
+            self._settings.model,
         )
-        try:
-            self._model = Llama(
-                model_path=str(model_path),
-                n_ctx=self._settings.context_window,
-                n_threads=self._runtime.n_threads,
-                logits_all=False,
-            )
-        except Exception as exc:  # pragma: no cover - backend errors
-            raise LLMClientError(f"Failed to initialise model: {exc}") from exc
 
-        return self._model
+        try:
+            self._client = Client(host=self._settings.base_url)
+            self._client_error = ResponseError
+        except Exception as exc:  # pragma: no cover - backend errors
+            raise LLMClientError(f"Failed to initialise Ollama client: {exc}") from exc
+
+        return self._client, self._client_error
 
     def generate_structured(
         self,
@@ -109,14 +100,15 @@ class LLMClient:
     ) -> Dict[str, Any]:
         """Generate a JSON object that complies with ``template``."""
 
-        model = self._load_model()
+        client, error_cls = self._get_client()
         attempts = max_retries or self._settings.max_retries
         temperature = self._runtime.temperature
 
         for attempt in range(1, attempts + 1):
             try:
                 payload = self._invoke(
-                    model=model,
+                    client=client,
+                    error_cls=error_cls,
                     template=template,
                     variables=variables,
                     temperature=temperature if attempt == 1 else 0.0,
@@ -141,7 +133,8 @@ class LLMClient:
     def _invoke(
         self,
         *,
-        model,
+        client,
+        error_cls: Type[Exception],
         template: JsonPromptTemplate,
         variables: Dict[str, Any],
         temperature: float,
@@ -161,13 +154,23 @@ class LLMClient:
             self._runtime.max_tokens,
         )
 
-        result = model.create_chat_completion(
-            messages=messages,
-            temperature=temperature,
-            max_tokens=self._runtime.max_tokens,
-            top_p=self._runtime.top_p,
-            repeat_penalty=self._runtime.repeat_penalty,
-        )
+        try:
+            result = client.chat(
+                model=self._settings.model,
+                messages=messages,
+                options={
+                    "temperature": temperature,
+                    "top_p": self._runtime.top_p,
+                    "repeat_penalty": self._runtime.repeat_penalty,
+                    "num_predict": self._runtime.max_tokens,
+                    "num_ctx": self._settings.context_window,
+                },
+            )
+        except error_cls as exc:
+            raise ValueError(f"Ollama returned an error: {exc}") from exc
+        except Exception as exc:  # pragma: no cover - backend errors
+            raise ValueError(f"Unexpected Ollama failure: {exc}") from exc
+
         content = self._extract_content(result)
         if not content:
             raise ValueError("Empty response from LLM")
@@ -180,10 +183,7 @@ class LLMClient:
 
     @staticmethod
     def _extract_content(result: Dict[str, Any]) -> str:
-        choices = result.get("choices") or []
-        if not choices:
-            return ""
-        message = choices[0].get("message") or {}
+        message = result.get("message") or {}
         return (message.get("content") or "").strip()
 
     @staticmethod

@@ -9,6 +9,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from src.config.store import (
+    CONFIG_LLM_BASE_URL,
+    CONFIG_LLM_MODEL,
     CONFIG_LLM_MODEL_PATH,
     CONFIG_LLM_PROVIDER,
     CONFIG_SUMMARIZATION_INTERVAL,
@@ -56,8 +58,11 @@ def admin_home(
         CONFIG_SUMMARIZATION_INTERVAL,
         3600,
     )
-    provider = get_config(session, CONFIG_LLM_PROVIDER, "llama_cpp")
-    model_path = get_config(session, CONFIG_LLM_MODEL_PATH, "models/model.gguf")
+    provider = get_config(session, CONFIG_LLM_PROVIDER, "ollama")
+    model_name = get_config(session, CONFIG_LLM_MODEL, "qwen3:30b")
+    if model_name is None:
+        model_name = get_config(session, CONFIG_LLM_MODEL_PATH, "qwen3:30b")
+    base_url = get_config(session, CONFIG_LLM_BASE_URL, "http://127.0.0.1:11434")
     message = request.query_params.get("msg")
 
     context = {
@@ -66,7 +71,8 @@ def admin_home(
         "profile": active_profile,
         "interval": interval,
         "provider": provider,
-        "model_path": model_path,
+        "model": model_name,
+        "base_url": base_url,
         "message": message,
     }
     return templates.TemplateResponse("admin/index.html", context)
@@ -157,15 +163,21 @@ def update_scheduler_interval(
 @router.post("/settings/llm", response_class=RedirectResponse)
 def update_llm_settings(
     provider: str = Form(...),
-    model_path: str = Form(...),
+    model: str = Form(...),
+    base_url: str = Form(...),
     session: Session = Depends(get_session),
 ):
     clean_provider = provider.strip()
-    clean_model = model_path.strip()
-    if not clean_provider or not clean_model:
-        raise HTTPException(status_code=400, detail="Provider and model path are required")
+    clean_model = model.strip()
+    clean_base_url = base_url.strip()
+    if not clean_provider or not clean_model or not clean_base_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Provider, model, and base URL are required",
+        )
     set_config(session, CONFIG_LLM_PROVIDER, clean_provider)
-    set_config(session, CONFIG_LLM_MODEL_PATH, clean_model)
+    set_config(session, CONFIG_LLM_MODEL, clean_model)
+    set_config(session, CONFIG_LLM_BASE_URL, clean_base_url)
     return _redirect("/admin", "LLM configuration saved")
 
 

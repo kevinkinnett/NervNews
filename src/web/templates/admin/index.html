@@ -93,13 +93,15 @@
     </div>
     <div class="card">
         <h3 style="margin-top:0;">Model configuration</h3>
-        <p style="color:#475569;">Specify which local model is loaded for enrichment and summarisation.</p>
+        <p style="color:#475569;">Configure the Ollama runtime used for enrichment and summarisation.</p>
         <form method="post" action="/admin/settings/llm">
             <label for="provider">Provider</label>
             <input id="provider" type="text" name="provider" value="{{ provider }}" required />
-            <label for="model-path">Model path</label>
-            <input id="model-path" type="text" name="model_path" value="{{ model_path }}" required />
-            <small>Path should be readable by the scheduler host. Reload occurs automatically.</small>
+            <label for="model-name">Model</label>
+            <input id="model-name" type="text" name="model" value="{{ model }}" required />
+            <label for="base-url">Base URL</label>
+            <input id="base-url" type="text" name="base_url" value="{{ base_url }}" required />
+            <small>Example: model <code>qwen3:30b</code> served by Ollama on <code>http://127.0.0.1:11434</code>.</small>
             <button type="submit" style="margin-top:0.75rem;">Save configuration</button>
         </form>
     </div>

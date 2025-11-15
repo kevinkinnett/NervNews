@@ -5,8 +5,9 @@ request_timeout: 10
 user_agent: NervNewsBot/0.1
 
 llm:
-  provider: llama_cpp
-  model_path: models/model.gguf
+  provider: ollama
+  model: qwen3:30b
+  base_url: http://127.0.0.1:11434
   context_window: 4096
   max_output_tokens: 256
   temperature: 0.2
