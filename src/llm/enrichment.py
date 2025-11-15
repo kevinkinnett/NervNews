@@ -18,6 +18,7 @@ from src.llm.prompts import (
     LOCATION_EXTRACTION_PROMPT,
     TOPIC_IDENTIFICATION_PROMPT,
 )
+from src.telemetry import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class ArticleEnrichmentService:
         batch_start = time.perf_counter()
         successes = 0
         failures = 0
+        attempted = 0
         with session_scope(self._session_factory) as session:
             articles = (
                 session.query(Article)
@@ -51,6 +53,7 @@ class ArticleEnrichmentService:
                 if article.enriched_at:
                     logger.debug("Skipping article %s already enriched", article.id)
                     continue
+                attempted += 1
                 try:
                     self._enrich_single(session, article)
                     successes += 1
@@ -59,6 +62,14 @@ class ArticleEnrichmentService:
                     failures += 1
 
         duration = time.perf_counter() - batch_start
+        if attempted:
+            metrics.record_enrichment_batch(
+                attempted=attempted,
+                successes=successes,
+                failures=failures,
+                duration_seconds=duration,
+            )
+
         if successes:
             avg = duration / max(successes, 1)
             logger.info(
@@ -68,11 +79,24 @@ class ArticleEnrichmentService:
                 duration,
                 avg,
                 failures,
+                extra={
+                    "event": "enrichment.batch_completed",
+                    "attempted": attempted,
+                    "successes": successes,
+                    "failures": failures,
+                    "duration_seconds": duration,
+                },
             )
         else:
             logger.warning(
                 "No articles were successfully enriched for ids: %s",
                 ids,
+                extra={
+                    "event": "enrichment.batch_empty",
+                    "attempted": attempted,
+                    "failures": failures,
+                    "duration_seconds": duration,
+                },
             )
 
     def _collect_variables(self, article: Article) -> Dict[str, str | None]:

@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  service:
+    build: .
+    command: uvicorn src.web.main:app --host 0.0.0.0 --port 8000
+    environment:
+      NERVNEWS_LOG_FORMAT: json
+      NERVNEWS_METRICS_PORT: "9000"
+    ports:
+      - "8000:8000"
+      - "9000:9000"
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+      - ./models:/app/models
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    command: python -m src.main
+    depends_on:
+      - service
+    environment:
+      NERVNEWS_LOG_FORMAT: json
+      NERVNEWS_METRICS_PORT: "9001"
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+      - ./models:/app/models
+    restart: unless-stopped
+
+  web:
+    build: .
+    command: uvicorn src.web.main:app --host 0.0.0.0 --port 8080
+    depends_on:
+      - service
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+      - ./models:/app/models
+    restart: unless-stopped
