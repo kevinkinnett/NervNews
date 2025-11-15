@@ -4,6 +4,16 @@ database_url: sqlite:///nervnews.db
 request_timeout: 10
 user_agent: NervNewsBot/0.1
 
+llm:
+  provider: llama_cpp
+  model_path: models/model.gguf
+  context_window: 4096
+  max_output_tokens: 256
+  temperature: 0.2
+  top_p: 0.95
+  repeat_penalty: 1.1
+  max_retries: 3
+
 feeds:
   - name: Example Feed
     url: https://example.com/rss

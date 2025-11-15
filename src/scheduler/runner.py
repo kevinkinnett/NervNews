@@ -9,6 +9,7 @@ from src.config.settings import AppSettings, FeedSettings, load_settings
 from src.db.session import create_engine_from_url, create_session_factory, init_db
 from src.ingestion.extractor import ArticleExtractor
 from src.ingestion.rss import RSSIngestionService
+from src.llm import ArticleEnrichmentService, LLMClient, LLMClientError
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ def _register_jobs(
     scheduler: BackgroundScheduler,
     settings: AppSettings,
     ingestion_service: RSSIngestionService,
+    enrichment_service: ArticleEnrichmentService,
 ) -> None:
     for feed in settings.feeds:
         if not feed.enabled:
@@ -34,7 +36,7 @@ def _register_jobs(
             _run_ingestion_job,
             "interval",
             seconds=feed.schedule_seconds,
-            args=[feed, ingestion_service],
+            args=[feed, ingestion_service, enrichment_service],
             id=f"feed-{feed.name}",
             replace_existing=True,
         )
@@ -43,7 +45,11 @@ def _register_jobs(
         )
 
 
-def _run_ingestion_job(feed: FeedSettings, ingestion_service: RSSIngestionService) -> None:
+def _run_ingestion_job(
+    feed: FeedSettings,
+    ingestion_service: RSSIngestionService,
+    enrichment_service: ArticleEnrichmentService,
+) -> None:
     new_articles = ingestion_service.ingest(feed)
     if new_articles:
         logger.info(
@@ -52,6 +58,10 @@ def _run_ingestion_job(feed: FeedSettings, ingestion_service: RSSIngestionServic
             len(new_articles),
             new_articles,
         )
+        try:
+            enrichment_service.enrich_articles(new_articles)
+        except LLMClientError:
+            logger.exception("LLM enrichment failed for feed %s", feed.name)
 
 
 def run_scheduler(settings: AppSettings | None = None) -> BackgroundScheduler:
@@ -65,10 +75,15 @@ def run_scheduler(settings: AppSettings | None = None) -> BackgroundScheduler:
     session_factory = create_session_factory(engine)
 
     extractor = ArticleExtractor(timeout=settings.request_timeout, user_agent=settings.user_agent)
+    llm_client = LLMClient(settings.llm)
+    enrichment_service = ArticleEnrichmentService(
+        session_factory=session_factory,
+        llm_client=llm_client,
+    )
     ingestion_service = RSSIngestionService(session_factory=session_factory, extractor=extractor)
 
     scheduler = BackgroundScheduler()
-    _register_jobs(scheduler, settings, ingestion_service)
+    _register_jobs(scheduler, settings, ingestion_service, enrichment_service)
     scheduler.start()
     logger.info("Scheduler started with %d jobs", len(scheduler.get_jobs()))
     return scheduler
