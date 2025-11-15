@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="/data" style="display:inline-block; margin-bottom:1rem;">← Back to data overview</a>
+<div class="card">
+    <h2 style="margin-top:0;">{{ article.title or "(untitled)" }}</h2>
+    <p><strong>Feed:</strong> {{ article.feed.name if article.feed else "–" }}</p>
+    <p><strong>Source URL:</strong> <a href="{{ article.url }}" target="_blank" rel="noopener">{{ article.url }}</a></p>
+    <p><strong>GUID:</strong> {{ article.guid or "–" }}</p>
+    <p>
+        <strong>Published:</strong> {{ article.published_at or "–" }} ·
+        <strong>Fetched:</strong> {{ article.fetched_at or "–" }} ·
+        <strong>Enriched:</strong> {{ article.enriched_at or "Pending" }}
+    </p>
+    <form method="post" action="/data/articles/{{ article.id }}/delete" onsubmit="return confirm('Delete this article? It will be re-downloaded on the next ingestion run.');">
+        <button type="submit" class="button-danger">Delete article</button>
+    </form>
+</div>
+
+<div class="grid two">
+    <div class="card">
+        <h3 style="margin-top:0;">Topic &amp; Categories</h3>
+        <dl>
+            <dt>Topic</dt>
+            <dd>
+                {% if article.topic %}
+                    {{ article.topic }}{% if article.topic_confidence %} <span class="badge badge-medium">{{ '%.0f'|format(article.topic_confidence * 100) }}%</span>{% endif %}
+                {% else %}
+                    <em>Not set</em>
+                {% endif %}
+            </dd>
+            <dt>Supporting Points</dt>
+            <dd>{% if article.topic_supporting_points %}<div style="white-space:pre-wrap;">{{ article.topic_supporting_points }}</div>{% else %}<em>Not provided</em>{% endif %}</dd>
+            <dt>Category</dt>
+            <dd>
+                {% if article.category %}
+                    {{ article.category }}{% if article.subcategory %} / {{ article.subcategory }}{% endif %}
+                    {% if article.category_confidence %}<span class="badge badge-medium">{{ '%.0f'|format(article.category_confidence * 100) }}%</span>{% endif %}
+                {% else %}
+                    <em>Not set</em>
+                {% endif %}
+            </dd>
+            <dt>Category Rationale</dt>
+            <dd>{% if article.category_rationale %}<div style="white-space:pre-wrap;">{{ article.category_rationale }}</div>{% else %}<em>Not provided</em>{% endif %}</dd>
+        </dl>
+    </div>
+    <div class="card">
+        <h3 style="margin-top:0;">Location</h3>
+        <dl>
+            <dt>Name</dt>
+            <dd>{% if article.location_name %}{{ article.location_name }}{% else %}<em>Not set</em>{% endif %}</dd>
+            <dt>Country</dt>
+            <dd>{% if article.location_country %}{{ article.location_country }}{% else %}<em>Not set</em>{% endif %}</dd>
+            <dt>Confidence</dt>
+            <dd>{% if article.location_confidence %}{{ '%.0f'|format(article.location_confidence * 100) }}%{% else %}<em>Not available</em>{% endif %}</dd>
+            <dt>Justification</dt>
+            <dd>{% if article.location_justification %}<div style="white-space:pre-wrap;">{{ article.location_justification }}</div>{% else %}<em>Not provided</em>{% endif %}</dd>
+        </dl>
+    </div>
+</div>
+
+<section class="card">
+    <h3 style="margin-top:0;">Extracted Content</h3>
+    <h4>Feed Summary</h4>
+    <div style="white-space:pre-wrap;">{{ article.summary or "(no summary available)" }}</div>
+    <h4>Brief Summary</h4>
+    <div style="white-space:pre-wrap;">{{ article.brief_summary or "(no brief summary generated)" }}</div>
+    <h4>Full Content</h4>
+    <div style="white-space:pre-wrap;">{{ article.content or "(no extracted content captured)" }}</div>
+</section>
+
+<section class="card">
+    <h3 style="margin-top:0;">Ingestion History</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Processed</th>
+                <th>Feed</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in ingestion_history %}
+            <tr>
+                <td>#{{ entry.id }}</td>
+                <td>{{ entry.processed_at or "–" }}</td>
+                <td>{{ entry.feed.name if entry.feed else "–" }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="3">No ingestion history recorded.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
