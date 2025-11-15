@@ -104,11 +104,17 @@
             <small>Example: model <code>qwen3:30b</code> served by Ollama on <code>http://127.0.0.1:11434</code>.</small>
             <button type="submit" style="margin-top:0.75rem;">Save configuration</button>
         </form>
-        <div class="llm-test-controls" style="margin-top:1rem;">
-            <button type="button" id="llm-test-button" class="secondary">Test connection</button>
-            <span id="llm-test-status" class="status-indicator status-idle" role="status">Idle</span>
+        <div class="llm-test-section">
+            <div class="llm-test-actions">
+                <button type="button" id="llm-test-button" class="secondary">Test connection</button>
+                <span id="llm-test-status" class="status-indicator status-idle" role="status">Idle</span>
+            </div>
+            <div class="llm-test-log">
+                <label for="llm-test-log" class="muted-label">Test output</label>
+                <div id="llm-test-log" class="output-panel" aria-live="polite">No test run yet.</div>
+            </div>
+            <small>Runs a short probe asking the configured model to confirm it is reachable.</small>
         </div>
-        <small>Runs a short probe asking the configured model to confirm it is reachable.</small>
     </div>
 </div>
 
@@ -129,6 +135,7 @@
         const button = document.getElementById("llm-test-button");
         const statusLabel = document.getElementById("llm-test-status");
         const toastContainer = document.getElementById("toast-container");
+        const logPanel = document.getElementById("llm-test-log");
 
         if (!button || !statusLabel) {
             return;
@@ -145,6 +152,38 @@
             const stateClass = stateClasses[state] || stateClasses.idle;
             statusLabel.textContent = label;
             statusLabel.className = `status-indicator ${stateClass}`;
+        };
+
+        const timestamp = () => new Date().toISOString();
+
+        const updateLog = (lines) => {
+            if (!logPanel) {
+                return;
+            }
+            const content = lines.join("\n");
+            logPanel.textContent = content || "Awaiting log output.";
+            logPanel.scrollTop = logPanel.scrollHeight;
+        };
+
+        const createLogger = () => {
+            const lines = [];
+            return {
+                push: (...entries) => {
+                    entries.forEach((entry) => {
+                        if (Array.isArray(entry)) {
+                            entry.forEach((item) => {
+                                const parts = String(item).split(/\r?\n/);
+                                parts.forEach((part) => lines.push(part));
+                            });
+                            return;
+                        }
+                        const parts = String(entry).split(/\r?\n/);
+                        parts.forEach((part) => lines.push(part));
+                    });
+                    updateLog(lines);
+                },
+                lines,
+            };
         };
 
         const showToast = (message, variant) => {
@@ -169,6 +208,10 @@
             button.disabled = true;
             setStatus("running", "Testing...");
 
+            const logger = createLogger();
+            logger.push(`[${timestamp()}] Starting LLM connectivity test.`);
+            logger.push(`[${timestamp()}] Request: POST /admin/settings/llm/test`);
+
             try {
                 const response = await fetch("/admin/settings/llm/test", {
                     method: "POST",
@@ -178,26 +221,48 @@
                     credentials: "same-origin",
                 });
 
+                const statusLabelText = response.statusText ? `${response.status} ${response.statusText}` : `${response.status}`;
+                logger.push(`[${timestamp()}] Response status: ${statusLabelText}`);
+
+                const responseText = await response.text();
+                if (responseText) {
+                    logger.push("Response body:");
+                    logger.push(responseText);
+                } else {
+                    logger.push("Response body: <empty>");
+                }
+
                 let payload = null;
-                try {
-                    payload = await response.json();
-                } catch (parseError) {
-                    payload = null;
+                if (responseText) {
+                    try {
+                        payload = JSON.parse(responseText);
+                    } catch (parseError) {
+                        const parseMessage = parseError instanceof Error ? parseError.message : "Unparseable response";
+                        logger.push(`JSON parse error: ${parseMessage}`);
+                    }
                 }
 
                 if (!response.ok || !payload || payload.ok !== true) {
-                    const reason = (payload && (payload.error || payload.detail)) || response.statusText || "Request failed";
+                    const reason = (payload && (payload.error || payload.detail || payload.message)) || statusLabelText || "Request failed";
                     setStatus("error", "Failed");
                     showToast(`LLM test failed: ${reason}`, "error");
+                    logger.push(`[${timestamp()}] Test outcome: failed.`);
+                    logger.push(`Reason: ${reason}`);
                     return;
                 }
 
                 setStatus("success", "Success");
                 showToast(`LLM replied: ${payload.response}`, "success");
+                logger.push(`[${timestamp()}] Test outcome: success.`);
+                if (payload.response) {
+                    logger.push(`Model response: ${payload.response}`);
+                }
             } catch (error) {
                 const message = error instanceof Error ? error.message : "Unexpected error";
                 setStatus("error", "Failed");
                 showToast(`LLM test failed: ${message}`, "error");
+                logger.push(`[${timestamp()}] Test outcome: failed.`);
+                logger.push(`Network error: ${message}`);
             } finally {
                 window.setTimeout(() => {
                     setStatus("idle", "Idle");
