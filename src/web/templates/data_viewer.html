@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% if message %}
+<div class="card" style="background:#ecfeff; border-color:#0e7490;">
+    <strong>{{ message }}</strong>
+</div>
+{% endif %}
+
 <section class="card">
     <h2>System Overview</h2>
     <div class="grid two">
@@ -16,6 +22,20 @@
             <h3>Ingestion Events</h3>
             <p><strong>{{ stats.ingestion_events }}</strong></p>
         </div>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Developer Actions</h2>
+    <div class="grid two" style="gap:1rem;">
+        <form method="post" action="/data/actions/reindex">
+            <p style="margin-top:0; color:#475569;">Trigger immediate RSS ingestion and enrichment for all feeds.</p>
+            <button type="submit">Re-index feeds</button>
+        </form>
+        <form method="post" action="/data/actions/delete-all" onsubmit="return confirm('Delete all article and summary data? This cannot be undone.');">
+            <p style="margin-top:0; color:#475569;">Remove all stored articles, summaries, and ingestion logs.</p>
+            <button type="submit" class="button-danger">Delete all data</button>
+        </form>
     </div>
 </section>
 
@@ -73,7 +93,7 @@
         <tbody>
             {% for article in recent_articles %}
             <tr>
-                <td>{{ article.title or "(untitled)" }}</td>
+                <td><a href="/data/articles/{{ article.id }}">{{ article.title or "(untitled)" }}</a></td>
                 <td>{{ article.feed.name if article.feed else "–" }}</td>
                 <td>{{ article.published_at or "–" }}</td>
                 <td>{{ article.fetched_at or "–" }}</td>
