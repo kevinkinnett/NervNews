@@ -7,8 +7,9 @@ models, and operating the ingestion stack in production-like environments.
 
 1. **Python runtime** – Install Python 3.11. When packaging inside Docker the
    provided `Dockerfile` already selects `python:3.11-slim`.
-2. **System dependencies** – Ensure `libstdc++`, `libgomp`, and `build-essential`
-   are installed on bare-metal hosts if you plan to compile llama.cpp kernels.
+2. **Ollama runtime** – Install [Ollama](https://ollama.com) on the host and
+   ensure `ollama serve` is running. Pull the desired model (for example
+   `ollama pull qwen3:30b`) before starting NervNews.
 3. **Virtual environment** – Use `python -m venv .venv` and install both
    `requirements.txt` (runtime) and `requirements-dev.txt` (testing & linting).
 4. **Database directory** – Create `data/` before first launch so SQLite files
@@ -17,27 +18,24 @@ models, and operating the ingestion stack in production-like environments.
 ## GPU requirements
 
 - NervNews can operate on CPU-only machines, but for production workloads a GPU
-  with at least 12 GB of VRAM is recommended for 7B+ parameter models.
-- Install the latest NVIDIA drivers and CUDA toolkit that match the
-  `llama-cpp-python` wheel. For container deployments ensure the host runtime
-  provides `nvidia-container-toolkit` so CUDA devices are available to Docker.
-- Configure llama.cpp thread counts via `llm.threads` in `config/settings.yaml`;
-  when running on GPU set this to the number of physical CPU cores used for
-  offloading tasks (e.g., 8).
+  with at least 12 GB of VRAM is recommended for 7B+ parameter models served via
+  Ollama.
+- Install the latest NVIDIA drivers and ensure the Ollama daemon detects your
+  GPU (see `ollama help run` for environment variables such as `OLLAMA_USE_GPU`).
+- When running Ollama on another host, expose it with `OLLAMA_HOST=0.0.0.0` and
+  update `llm.base_url` in `config/settings.yaml` so NervNews can reach it.
 
-## Model quantisation workflow
+## Ollama model management
 
-1. Download a base GGUF checkpoint (e.g., `Meta-Llama-3-8B-Instruct.Q4_K_M.gguf`).
-2. Place the file in `models/` and update `llm.model_path` in
-   `config/settings.yaml`.
-3. To perform custom quantisation:
-   - Clone `https://github.com/ggerganov/llama.cpp` and build the quantisation
-     tools (`make quantize`).
-   - Convert your original checkpoint to GGUF if required (`convert-hf-to-gguf`).
-   - Run `./quantize original.gguf custom.Q4_K_M.gguf Q4_K_M` and copy the output
-     into `models/`.
-4. Restart the scheduler to reload settings; new quantised models are loaded on
-   demand when enrichment or summarisation jobs run.
+1. Pull the desired models with `ollama pull <model>` (for example,
+   `ollama pull qwen3:30b`). Ollama caches the weights under its own
+   configuration directory.
+2. Verify the runtime is healthy with `ollama ps` and test interactively using
+   `ollama run <model> "ping"`.
+3. Update `llm.model` and `llm.base_url` in `config/settings.yaml` (or the admin
+   UI) so NervNews targets the correct model name and host.
+4. The scheduler polls for configuration changes every 60 seconds; no restart is
+   required after updating the admin form.
 
 ## Container orchestration
 
@@ -69,8 +67,8 @@ To handle bursts of articles and scale beyond a single node:
      tasks and execute enrichment concurrently.
 
 2. **Multi-process enrichment workers**
-   - Spawn several enrichment workers per host, each with its own llama.cpp
-     instance pinned to available CPU/GPU resources.
+   - Spawn several enrichment workers per host, each sharing an Ollama backend
+     pinned to available CPU/GPU resources.
    - Use a coordination layer (e.g., Celery, Dramatiq) to balance load and retry
      failed tasks without blocking the scheduler.
 

@@ -8,6 +8,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from src.config.settings import AppSettings, FeedSettings, load_settings
 from src.config.store import (
+    CONFIG_LLM_BASE_URL,
+    CONFIG_LLM_MODEL,
     CONFIG_LLM_MODEL_PATH,
     CONFIG_LLM_PROVIDER,
     CONFIG_SUMMARIZATION_INTERVAL,
@@ -198,8 +200,16 @@ def run_scheduler(settings: AppSettings | None = None) -> BackgroundScheduler:
         summarization_service.update_settings(summarization_settings)
 
         provider_override = get_config(session, CONFIG_LLM_PROVIDER, settings.llm.provider)
-        model_override = get_config(session, CONFIG_LLM_MODEL_PATH, settings.llm.model_path)
-        llm_settings = build_llm_settings(settings.llm, provider_override, model_override)
+        model_override = get_config(session, CONFIG_LLM_MODEL, settings.llm.model)
+        if model_override is None:
+            model_override = get_config(session, CONFIG_LLM_MODEL_PATH, settings.llm.model)
+        base_url_override = get_config(session, CONFIG_LLM_BASE_URL, settings.llm.base_url)
+        llm_settings = build_llm_settings(
+            settings.llm,
+            provider_override,
+            model_override,
+            base_url_override,
+        )
         llm_client.update_settings(llm_settings)
 
     scheduler = BackgroundScheduler()
@@ -258,8 +268,16 @@ def run_scheduler(settings: AppSettings | None = None) -> BackgroundScheduler:
                 )
 
             provider = get_config(session, CONFIG_LLM_PROVIDER, settings.llm.provider)
-            model_path = get_config(session, CONFIG_LLM_MODEL_PATH, settings.llm.model_path)
-            llm_settings_new = build_llm_settings(settings.llm, provider, model_path)
+            model_value = get_config(session, CONFIG_LLM_MODEL, settings.llm.model)
+            if model_value is None:
+                model_value = get_config(session, CONFIG_LLM_MODEL_PATH, settings.llm.model)
+            base_url_value = get_config(session, CONFIG_LLM_BASE_URL, settings.llm.base_url)
+            llm_settings_new = build_llm_settings(
+                settings.llm,
+                provider,
+                model_value,
+                base_url_value,
+            )
             if llm_settings_new != state["llm_settings"]:
                 llm_client.update_settings(llm_settings_new)
                 state["llm_settings"] = llm_settings_new

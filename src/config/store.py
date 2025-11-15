@@ -13,7 +13,9 @@ from src.db.session import session_scope
 
 CONFIG_SUMMARIZATION_INTERVAL = "summarization.interval_seconds"
 CONFIG_LLM_PROVIDER = "llm.provider"
-CONFIG_LLM_MODEL_PATH = "llm.model_path"
+CONFIG_LLM_MODEL = "llm.model"
+CONFIG_LLM_BASE_URL = "llm.base_url"
+CONFIG_LLM_MODEL_PATH = "llm.model_path"  # legacy key retained for migrations
 CONFIG_ACTIVE_PROFILE_ID = "user_profile.active_id"
 
 
@@ -74,8 +76,11 @@ def ensure_seed_data(session_factory: sessionmaker[Session], settings: AppSettin
         if session.query(AppConfig).filter(AppConfig.key == CONFIG_LLM_PROVIDER).count() == 0:
             set_config(session, CONFIG_LLM_PROVIDER, settings.llm.provider)
 
-        if session.query(AppConfig).filter(AppConfig.key == CONFIG_LLM_MODEL_PATH).count() == 0:
-            set_config(session, CONFIG_LLM_MODEL_PATH, settings.llm.model_path)
+        if session.query(AppConfig).filter(AppConfig.key == CONFIG_LLM_MODEL).count() == 0:
+            set_config(session, CONFIG_LLM_MODEL, settings.llm.model)
+
+        if session.query(AppConfig).filter(AppConfig.key == CONFIG_LLM_BASE_URL).count() == 0:
+            set_config(session, CONFIG_LLM_BASE_URL, settings.llm.base_url)
 
         if session.query(AppConfig).filter(AppConfig.key == CONFIG_ACTIVE_PROFILE_ID).count() == 0:
             active_profile = (
@@ -111,12 +116,19 @@ def load_feed_settings(session: Session) -> List[FeedSettings]:
     return results
 
 
-def build_llm_settings(base: LLMSettings, provider: Optional[str], model_path: Optional[str]) -> LLMSettings:
+def build_llm_settings(
+    base: LLMSettings,
+    provider: Optional[str],
+    model: Optional[str],
+    base_url: Optional[str],
+) -> LLMSettings:
     updated = base
     if provider:
         updated = replace(updated, provider=str(provider))
-    if model_path:
-        updated = replace(updated, model_path=str(model_path))
+    if model:
+        updated = replace(updated, model=str(model))
+    if base_url:
+        updated = replace(updated, base_url=str(base_url))
     return updated
 
 
@@ -130,6 +142,8 @@ __all__ = [
     "CONFIG_SUMMARIZATION_INTERVAL",
     "CONFIG_LLM_PROVIDER",
     "CONFIG_LLM_MODEL_PATH",
+    "CONFIG_LLM_MODEL",
+    "CONFIG_LLM_BASE_URL",
     "CONFIG_ACTIVE_PROFILE_ID",
     "ensure_seed_data",
     "load_feed_settings",
