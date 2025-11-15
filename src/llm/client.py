@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 class LLMClientError(RuntimeError):
     """Raised when the LLM backend fails to produce a valid response."""
 
+    def __init__(self, message: str, debug_info: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(message)
+        self.debug_info = debug_info
+
 
 @dataclass(frozen=True)
 class _RuntimeConfig:
@@ -184,7 +188,11 @@ class LLMClient:
     @staticmethod
     def _extract_content(result: Dict[str, Any]) -> str:
         message = result.get("message") or {}
-        return (message.get("content") or "").strip()
+        content = (message.get("content") or "").strip()
+        if not content:
+            # Some models put the response in "thinking" field
+            content = (message.get("thinking") or "").strip()
+        return content
 
     @staticmethod
     def _parse_json(raw_text: str) -> Dict[str, Any]:
@@ -199,34 +207,56 @@ class LLMClient:
     def ping(self, prompt: str = "Hello, are you there?") -> str:
         """Perform a lightweight connectivity check against the LLM backend."""
 
-        client, error_cls = self._get_client()
+        import requests
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a status probe for NervNews. Reply concisely.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+        options = {
+            "temperature": 0.0,
+            "top_p": self._runtime.top_p,
+            "repeat_penalty": self._runtime.repeat_penalty,
+            "num_predict": min(64, self._runtime.max_tokens),
+            "num_ctx": self._settings.context_window,
+        }
+
+        url = f"{self._settings.base_url}/api/chat"
+        body = {
+            "model": self._settings.model,
+            "messages": messages,
+            "options": options,
+            "stream": False,
+        }
+
+        debug_info = {
+            "method": "POST",
+            "url": url,
+            "headers": {"Content-Type": "application/json"},
+            "body": body,
+        }
 
         try:
-            result = client.chat(
-                model=self._settings.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a status probe for NervNews. Reply concisely.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                options={
-                    "temperature": 0.0,
-                    "top_p": self._runtime.top_p,
-                    "repeat_penalty": self._runtime.repeat_penalty,
-                    "num_predict": min(64, self._runtime.max_tokens),
-                    "num_ctx": self._settings.context_window,
-                },
-            )
-        except error_cls as exc:  # pragma: no cover - backend dependency
-            raise LLMClientError(f"Ollama returned an error during connectivity test: {exc}") from exc
-        except Exception as exc:  # pragma: no cover - backend dependency
-            raise LLMClientError(f"Unexpected error during LLM connectivity test: {exc}") from exc
+            response = requests.post(url, json=body, timeout=30)
+            debug_info["status_code"] = response.status_code
+            debug_info["response_headers"] = dict(response.headers)
+            debug_info["response_body"] = response.text
+            response.raise_for_status()
+            result = response.json()
+        except requests.RequestException as exc:
+            debug_info["error"] = str(exc)
+            raise LLMClientError(f"HTTP error during LLM connectivity test: {exc}", debug_info) from exc
+        except Exception as exc:
+            debug_info["error"] = str(exc)
+            raise LLMClientError(f"Unexpected error during LLM connectivity test: {exc}", debug_info) from exc
 
         content = self._extract_content(result)
         if not content:
-            raise LLMClientError("LLM returned an empty response")
+            debug_info["error"] = "Empty response from LLM"
+            raise LLMClientError("LLM returned an empty response", debug_info)
 
         return content
 

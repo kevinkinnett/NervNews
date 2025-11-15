@@ -1,6 +1,8 @@
 """Administrative views and form handlers."""
 from __future__ import annotations
 
+import json
+import logging
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -23,6 +25,8 @@ from src.config.store import (
 from src.db.models import Feed, UserProfile
 from src.llm import LLMClient, LLMClientError
 from src.web.dependencies import get_session, get_templates
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -219,29 +223,44 @@ def update_profile(
 def test_llm_configuration(session: Session = Depends(get_session)) -> JSONResponse:
     """Perform a round-trip check against the configured LLM runtime."""
 
-    settings = load_settings()
-
-    provider = get_config(session, CONFIG_LLM_PROVIDER, settings.llm.provider)
-    model_name = get_config(session, CONFIG_LLM_MODEL, settings.llm.model)
-    if model_name is None:
-        model_name = get_config(session, CONFIG_LLM_MODEL_PATH, settings.llm.model)
-    base_url = get_config(session, CONFIG_LLM_BASE_URL, settings.llm.base_url)
-
-    llm_settings = build_llm_settings(
-        settings.llm,
-        provider,
-        model_name,
-        base_url,
-    )
-
-    llm_client = LLMClient(llm_settings)
-
     try:
+        settings = load_settings()
+        logger.info("Loaded settings")
+
+        provider = get_config(session, CONFIG_LLM_PROVIDER, settings.llm.provider)
+        model_name = get_config(session, CONFIG_LLM_MODEL, settings.llm.model)
+        if model_name is None:
+            model_name = get_config(session, CONFIG_LLM_MODEL_PATH, settings.llm.model)
+        base_url = get_config(session, CONFIG_LLM_BASE_URL, settings.llm.base_url)
+        logger.info(f"Config: provider={provider}, model={model_name}, base_url={base_url}")
+
+        llm_settings = build_llm_settings(
+            settings.llm,
+            provider,
+            model_name,
+            base_url,
+        )
+        logger.info("Built LLM settings")
+
+        llm_client = LLMClient(llm_settings)
+        logger.info("Created LLM client")
+
         reply = llm_client.ping("Status check: please confirm you are reachable.")
+        logger.info("Ping successful")
     except LLMClientError as exc:
+        error_msg = str(exc)
+        if hasattr(exc, 'debug_info') and exc.debug_info:
+            debug_str = json.dumps(exc.debug_info, indent=2)
+            error_msg += f"\n\nDebug Info:\n{debug_str}"
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"ok": False, "error": str(exc)},
+            content={"ok": False, "error": error_msg},
+        )
+    except Exception as exc:
+        logger.exception("Unexpected error in LLM test")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"ok": False, "error": f"Unexpected error: {exc}"},
         )
 
     return JSONResponse(content={"ok": True, "response": reply})
