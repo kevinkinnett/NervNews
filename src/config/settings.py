@@ -41,6 +41,18 @@ class LLMSettings:
 
 
 @dataclass
+class SummarizationSettings:
+    """Configuration for reporter-style summarisation cycles."""
+
+    interval_seconds: int = 3600
+    context_window_chars: int = 6000
+    max_iterations: int = 3
+    historical_days: int = 7
+    max_recent_articles: int = 15
+    max_historical_per_topic: int = 3
+
+
+@dataclass
 class AppSettings:
     """Top-level application settings loaded from YAML."""
 
@@ -49,6 +61,7 @@ class AppSettings:
     request_timeout: int = 10
     user_agent: str = "NervNewsBot/0.1"
     llm: LLMSettings = field(default_factory=LLMSettings)
+    summarization: SummarizationSettings = field(default_factory=SummarizationSettings)
 
 
 class SettingsError(RuntimeError):
@@ -101,6 +114,20 @@ def _parse_llm(entry: Dict[str, Any]) -> LLMSettings:
     )
 
 
+def _parse_summarization(entry: Dict[str, Any]) -> SummarizationSettings:
+    if not isinstance(entry, dict):
+        raise SettingsError("'summarization' must be a mapping of configuration values")
+
+    return SummarizationSettings(
+        interval_seconds=int(entry.get("interval_seconds", 3600)),
+        context_window_chars=int(entry.get("context_window_chars", 6000)),
+        max_iterations=max(1, int(entry.get("max_iterations", 3))),
+        historical_days=max(0, int(entry.get("historical_days", 7))),
+        max_recent_articles=max(1, int(entry.get("max_recent_articles", 15))),
+        max_historical_per_topic=max(1, int(entry.get("max_historical_per_topic", 3))),
+    )
+
+
 def load_settings(path: Optional[Path] = None) -> AppSettings:
     """Load application settings from YAML into ``AppSettings``.
 
@@ -130,12 +157,20 @@ def load_settings(path: Optional[Path] = None) -> AppSettings:
     llm_raw = data.get("llm", {})
     llm_settings = _parse_llm(llm_raw) if llm_raw else LLMSettings()
 
+    summarization_raw = data.get("summarization", {})
+    summarization_settings = (
+        _parse_summarization(summarization_raw)
+        if summarization_raw
+        else SummarizationSettings()
+    )
+
     return AppSettings(
         database_url=database_url,
         feeds=feeds,
         request_timeout=request_timeout,
         user_agent=user_agent,
         llm=llm_settings,
+        summarization=summarization_settings,
     )
 
 
@@ -143,6 +178,7 @@ __all__ = [
     "AppSettings",
     "FeedSettings",
     "LLMSettings",
+    "SummarizationSettings",
     "SettingsError",
     "load_settings",
 ]

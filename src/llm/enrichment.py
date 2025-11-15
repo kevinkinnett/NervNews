@@ -12,6 +12,7 @@ from src.db.models import Article
 from src.db.session import session_scope
 from src.llm.client import LLMClient, LLMClientError
 from src.llm.prompts import (
+    ARTICLE_BRIEF_PROMPT,
     CATEGORY_CLASSIFICATION_PROMPT,
     JsonPromptTemplate,
     LOCATION_EXTRACTION_PROMPT,
@@ -91,6 +92,7 @@ class ArticleEnrichmentService:
         location = self._safe_invoke(LOCATION_EXTRACTION_PROMPT, variables)
         topic = self._safe_invoke(TOPIC_IDENTIFICATION_PROMPT, variables)
         classification = self._safe_invoke(CATEGORY_CLASSIFICATION_PROMPT, variables)
+        brief = self._safe_invoke(ARTICLE_BRIEF_PROMPT, variables)
 
         article.location_name = location.get("location_name")
         article.location_country = location.get("country")
@@ -105,6 +107,8 @@ class ArticleEnrichmentService:
         article.subcategory = classification.get("subcategory")
         article.category_confidence = self._to_float(classification.get("confidence"))
         article.category_rationale = classification.get("rationale")
+
+        article.brief_summary = brief.get("brief")
 
         article.enriched_at = datetime.utcnow()
 
