@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+    <h2>System Overview</h2>
+    <div class="grid two">
+        <div>
+            <h3>Total Articles</h3>
+            <p><strong>{{ stats.article_total }}</strong></p>
+        </div>
+        <div>
+            <h3>Enriched Articles</h3>
+            <p><strong>{{ stats.enriched_total }}</strong></p>
+        </div>
+        <div>
+            <h3>Ingestion Events</h3>
+            <p><strong>{{ stats.ingestion_events }}</strong></p>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Feed Health</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Feed</th>
+                <th>Status</th>
+                <th>Articles</th>
+                <th>Last Published</th>
+                <th>Last Fetched</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for feed, article_count, last_published, last_fetched in feed_rows %}
+            <tr>
+                <td>{{ feed.name }}</td>
+                <td>
+                    {% if feed.enabled %}
+                    <span class="badge badge-low">Active</span>
+                    {% else %}
+                    <span class="badge badge-high">Disabled</span>
+                    {% endif %}
+                </td>
+                <td>{{ article_count }}</td>
+                <td>{{ last_published or "–" }}</td>
+                <td>{{ last_fetched or "–" }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5">No feeds configured.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h2>Recent Articles</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Feed</th>
+                <th>Published</th>
+                <th>Fetched</th>
+                <th>Enriched</th>
+                <th>Topic</th>
+                <th>Category</th>
+                <th>Location</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for article in recent_articles %}
+            <tr>
+                <td>{{ article.title or "(untitled)" }}</td>
+                <td>{{ article.feed.name if article.feed else "–" }}</td>
+                <td>{{ article.published_at or "–" }}</td>
+                <td>{{ article.fetched_at or "–" }}</td>
+                <td>{% if article.enriched_at %}{{ article.enriched_at }}{% else %}–{% endif %}</td>
+                <td>
+                    {% if article.topic %}
+                        {{ article.topic }}
+                        {% if article.topic_confidence %}
+                            <span class="badge badge-medium">{{ '%.0f'|format(article.topic_confidence * 100) }}%</span>
+                        {% endif %}
+                    {% else %}
+                        –
+                    {% endif %}
+                </td>
+                <td>
+                    {% if article.category %}
+                        {{ article.category }}
+                        {% if article.subcategory %}<br/><small>{{ article.subcategory }}</small>{% endif %}
+                    {% else %}
+                        –
+                    {% endif %}
+                </td>
+                <td>
+                    {% if article.location_name %}
+                        {{ article.location_name }}
+                        {% if article.location_country %}
+                            <br/><small>{{ article.location_country }}</small>
+                        {% endif %}
+                    {% else %}
+                        –
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="8">No articles available.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h2>Summary Runs</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Status</th>
+                <th>Window</th>
+                <th>Articles</th>
+                <th>Headline</th>
+                <th>Evaluation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in recent_summaries %}
+            <tr>
+                <td><a href="/summaries/{{ entry.summary.id }}">#{{ entry.summary.id }}</a></td>
+                <td>{{ entry.summary.status }}</td>
+                <td>{{ entry.summary.window_start }} → {{ entry.summary.window_end }}</td>
+                <td>{{ entry.article_count }}</td>
+                <td>
+                    {% if entry.payload.headline %}
+                        <strong>{{ entry.payload.headline }}</strong>
+                        <br/>
+                        <small>{{ entry.payload.summary }}</small>
+                    {% else %}
+                        –
+                    {% endif %}
+                </td>
+                <td>
+                    {% if entry.has_evaluation %}
+                        <span class="badge badge-low">Available</span>
+                    {% else %}
+                        <span class="badge badge-medium">Pending</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6">No summaries have been generated yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
