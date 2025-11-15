@@ -1,0 +1,13 @@
+# Default NervNews configuration
+
+database_url: sqlite:///nervnews.db
+request_timeout: 10
+user_agent: NervNewsBot/0.1
+
+feeds:
+  - name: Example Feed
+    url: https://example.com/rss
+    schedule_seconds: 900
+    enabled: true
+    metadata:
+      language: en
