@@ -18,6 +18,15 @@ class _DummyError(Exception):
     """Sentinel error used to simulate ollama failures."""
 
 
+class _SchemaClient:
+    def __init__(self):
+        self.calls = []
+
+    def chat(self, **kwargs):  # pragma: no cover - simple stub
+        self.calls.append(kwargs)
+        return {"message": {"content": "{\"summary\": \"works\"}"}}
+
+
 def test_generate_structured_logs_debug_payload(monkeypatch, caplog) -> None:
     settings = LLMSettings(
         provider="ollama",
@@ -63,3 +72,59 @@ def test_generate_structured_logs_debug_payload(monkeypatch, caplog) -> None:
     logged_payload = debug_messages[-1]
     assert "\"Authorization\": \"***\"" in logged_payload
     assert "not json" in logged_payload
+
+
+def test_generate_structured_sends_schema(monkeypatch) -> None:
+    settings = LLMSettings(
+        provider="ollama",
+        model="dummy-model",
+        base_url="http://localhost:11434",
+        max_retries=1,
+    )
+    client = LLMClient(settings)
+
+    schema_client = _SchemaClient()
+    monkeypatch.setattr(client, "_get_client", lambda: (schema_client, _DummyError))
+
+    template = JsonPromptTemplate(
+        name="schema-test",
+        system_prompt="System",
+        user_template="Explain {topic}",
+        response_schema={"type": "object", "required": ["summary"]},
+    )
+
+    payload = client.generate_structured(template, {"topic": "testing"})
+
+    assert payload == {"summary": "works"}
+
+    assert schema_client.calls, "expected schema client to be invoked"
+    kwargs = schema_client.calls[0]
+    assert "format" in kwargs
+    assert kwargs["format"] == template.response_format
+
+
+def test_generate_structured_rejects_non_json_early(monkeypatch) -> None:
+    settings = LLMSettings(
+        provider="ollama",
+        model="dummy-model",
+        base_url="http://localhost:11434",
+        max_retries=1,
+    )
+    client = LLMClient(settings)
+
+    monkeypatch.setattr(client, "_get_client", lambda: (_DummyClient(), _DummyError))
+
+    template = JsonPromptTemplate(
+        name="reject-test",
+        system_prompt="System",
+        user_template="Explain {topic}",
+        response_schema={"type": "object", "required": ["summary"]},
+    )
+
+    with pytest.raises(LLMClientError) as excinfo:
+        client.generate_structured(template, {"topic": "debugging"})
+
+    cause = excinfo.value.__cause__
+    assert cause is not None
+    assert "was not JSON" in str(cause)
+    assert excinfo.value.debug_info["error"] == "LLM response was not JSON"

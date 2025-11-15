@@ -24,6 +24,18 @@ class JsonPromptTemplate:
     def required_fields(self) -> Iterable[str]:
         return tuple(self.response_schema.get("required", ()))
 
+    @property
+    def response_format(self) -> Dict[str, Any]:
+        """Return the schema formatted for Ollama JSON mode/function calling."""
+
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": self.name,
+                "schema": self.response_schema,
+            },
+        }
+
     def validate(self, payload: Dict[str, Any]) -> None:
         missing = [field for field in self.required_fields if field not in payload]
         if missing:

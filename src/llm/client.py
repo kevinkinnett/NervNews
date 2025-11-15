@@ -170,6 +170,8 @@ class LLMClient:
             self._runtime.max_tokens,
         )
 
+        response_format = template.response_format if template.response_schema else None
+
         payload = {
             "model": self._settings.model,
             "messages": messages,
@@ -182,6 +184,9 @@ class LLMClient:
             },
         }
 
+        if response_format:
+            payload["format"] = response_format
+
         debug_info: Dict[str, Any] = {
             "method": "POST",
             "url": f"{self._settings.base_url}/api/chat",
@@ -190,10 +195,12 @@ class LLMClient:
         }
 
         try:
-            result = client.chat(
-                model=self._settings.model,
+            result = self._chat_with_optional_format(
+                client=client,
+                error_cls=error_cls,
                 messages=messages,
-                options=payload["options"],
+                response_format=response_format,
+                debug_info=debug_info,
             )
         except error_cls as exc:
             debug_info["error"] = str(exc)
@@ -210,6 +217,10 @@ class LLMClient:
 
         debug_info["response_body"] = content
 
+        if template.response_schema and not content.lstrip().startswith("{"):
+            debug_info["error"] = "LLM response was not JSON"
+            raise LLMClientError("LLM response was not JSON", debug_info)
+
         try:
             parsed = self._parse_json(content)
         except Exception as exc:
@@ -225,6 +236,47 @@ class LLMClient:
         """Return the headers used for debug logging."""
 
         return {"Content-Type": "application/json"}
+
+    def _chat_with_optional_format(
+        self,
+        *,
+        client,
+        error_cls: Type[Exception],
+        messages,
+        response_format: Optional[Dict[str, Any]],
+        debug_info: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        kwargs = {
+            "model": self._settings.model,
+            "messages": messages,
+            "options": debug_info["payload"]["options"],
+        }
+
+        if not response_format:
+            return client.chat(**kwargs)
+
+        try:
+            return client.chat(**kwargs, format=response_format)
+        except TypeError as exc:
+            debug_info.setdefault("warnings", []).append(
+                f"Falling back to plain mode because client rejected format parameter: {exc}"
+            )
+        except error_cls as exc:
+            if not self._format_rejected(exc):
+                raise
+            debug_info.setdefault("warnings", []).append(
+                f"Falling back to plain mode because backend rejected format parameter: {exc}"
+            )
+        # Fallback path removes the format to match the actual request body in debug output.
+        debug_info["payload"].pop("format", None)
+        return client.chat(**kwargs)
+
+    @staticmethod
+    def _format_rejected(error: Exception) -> bool:
+        message = str(error).lower()
+        if "format" not in message:
+            return False
+        return any(token in message for token in ("unsupported", "unknown", "invalid", "unexpected"))
 
     def _log_debug_payload(
         self, template_name: str, debug_info: Optional[Dict[str, Any]]
