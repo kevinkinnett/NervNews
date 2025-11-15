@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 style="margin-bottom:1rem;">Latest newsroom brief</h2>
+{% if latest %}
+<div class="card">
+    <h3 style="margin-top:0;">{{ latest_payload.headline or "Untitled update" }}</h3>
+    <p style="color:#475569;">{{ latest_payload.summary }}</p>
+    {% if latest_evaluation %}
+    <div style="margin-bottom:1rem;">
+        <strong>Overall assessment</strong>
+        <div>
+            <span class="badge badge-{{ 'high' if latest_evaluation.overall_relevance.label|lower == 'high' else 'medium' if latest_evaluation.overall_relevance.label|lower == 'medium' else 'low' }}">
+                Relevance: {{ latest_evaluation.overall_relevance.label }} ({{ latest_evaluation.overall_relevance.score }})
+            </span>
+            <span class="badge badge-{{ 'high' if latest_evaluation.overall_criticality.label|lower == 'high' else 'medium' if latest_evaluation.overall_criticality.label|lower == 'medium' else 'low' }}">
+                Criticality: {{ latest_evaluation.overall_criticality.label }} ({{ latest_evaluation.overall_criticality.score }})
+            </span>
+        </div>
+        <p style="margin-top:0.5rem; color:#475569;">{{ latest_evaluation.overall_criticality.explanation }}</p>
+    </div>
+    {% if latest.evaluation.profile_snapshot %}
+    <p style="font-size:0.9rem; color:#6b7280;">Profile focus: {{ latest.evaluation.profile_snapshot }}</p>
+    {% endif %}
+    {% endif %}
+    <h4>Key developments</h4>
+    <ul>
+        {% for point in latest_payload.key_points %}
+        {% set item = latest_evaluation.items[loop.index0] if latest_evaluation and latest_evaluation.items|length > loop.index0 else None %}
+        <li style="margin-bottom:0.85rem;">
+            <div style="font-weight:600;">{{ point }}</div>
+            {% if item %}
+            <div style="margin-top:0.35rem;">
+                <span class="badge badge-{{ 'high' if item.relevance.label|lower == 'high' else 'medium' if item.relevance.label|lower == 'medium' else 'low' }}">Relevance: {{ item.relevance.label }} ({{ item.relevance.score }})</span>
+                <span class="badge badge-{{ 'high' if item.criticality.label|lower == 'high' else 'medium' if item.criticality.label|lower == 'medium' else 'low' }}">Criticality: {{ item.criticality.label }} ({{ item.criticality.score }})</span>
+                <span class="badge badge-{{ 'high' if item.escalation|lower == 'escalate' else 'medium' if item.escalation|lower == 'monitor' else 'low' }}">Action: {{ item.escalation|title }}</span>
+            </div>
+            <p style="color:#475569; margin-top:0.35rem;">{{ item.explanation }}</p>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    <a href="/summaries/{{ latest.id }}">View full summary log →</a>
+</div>
+{% else %}
+<div class="card">
+    <p>No summaries have been generated yet.</p>
+</div>
+{% endif %}
+
+<h2 style="margin:2rem 0 1rem;">Recent summary history</h2>
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Window</th>
+                <th>Status</th>
+                <th>Articles</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for entry in history %}
+            {% set summary = entry.summary %}
+            <tr>
+                <td>{{ summary.window_start.strftime('%Y-%m-%d %H:%M') }} → {{ summary.window_end.strftime('%H:%M') }}</td>
+                <td>{{ summary.status.title() }}</td>
+                <td>{{ entry.article_count }} articles</td>
+                <td><a href="/summaries/{{ summary.id }}">Open</a></td>
+            </tr>
+        {% else %}
+            <tr><td colspan="4">No historical summaries available.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

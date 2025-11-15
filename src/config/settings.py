@@ -17,6 +17,7 @@ ENV_SETTINGS_PATH = "NERVNEWS_SETTINGS"
 class FeedSettings:
     """Configuration for a single RSS/Atom feed."""
 
+    id: Optional[int] = None
     name: str
     url: str
     schedule_seconds: int = 900
@@ -53,6 +54,15 @@ class SummarizationSettings:
 
 
 @dataclass
+class UserProfileSettings:
+    """Default newsroom user profile description."""
+
+    title: str = "Default Audience"
+    content: str = ""
+    is_active: bool = True
+
+
+@dataclass
 class AppSettings:
     """Top-level application settings loaded from YAML."""
 
@@ -62,6 +72,7 @@ class AppSettings:
     user_agent: str = "NervNewsBot/0.1"
     llm: LLMSettings = field(default_factory=LLMSettings)
     summarization: SummarizationSettings = field(default_factory=SummarizationSettings)
+    user_profile: Optional[UserProfileSettings] = None
 
 
 class SettingsError(RuntimeError):
@@ -85,6 +96,7 @@ def _parse_feed(entry: Dict[str, Any]) -> FeedSettings:
     enabled = bool(entry.get("enabled", True))
     metadata = dict(entry.get("metadata", {}))
     return FeedSettings(
+        id=entry.get("id"),
         name=str(entry["name"]),
         url=str(entry["url"]),
         schedule_seconds=schedule,
@@ -164,6 +176,15 @@ def load_settings(path: Optional[Path] = None) -> AppSettings:
         else SummarizationSettings()
     )
 
+    profile_entry = data.get("user_profile")
+    profile_settings: Optional[UserProfileSettings] = None
+    if isinstance(profile_entry, dict) and profile_entry.get("content"):
+        profile_settings = UserProfileSettings(
+            title=str(profile_entry.get("title", "Default Audience")),
+            content=str(profile_entry.get("content", "")),
+            is_active=bool(profile_entry.get("is_active", True)),
+        )
+
     return AppSettings(
         database_url=database_url,
         feeds=feeds,
@@ -171,6 +192,7 @@ def load_settings(path: Optional[Path] = None) -> AppSettings:
         user_agent=user_agent,
         llm=llm_settings,
         summarization=summarization_settings,
+        user_profile=profile_settings,
     )
 
 
@@ -179,6 +201,7 @@ __all__ = [
     "FeedSettings",
     "LLMSettings",
     "SummarizationSettings",
+    "UserProfileSettings",
     "SettingsError",
     "load_settings",
 ]

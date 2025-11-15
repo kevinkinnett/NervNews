@@ -8,6 +8,7 @@ from .summarization import (
     REPORTER_SUMMARY_PROMPT,
 )
 from .topic import TOPIC_IDENTIFICATION_PROMPT
+from .relevance import SUMMARY_RELEVANCE_PROMPT
 
 __all__ = [
     "JsonPromptTemplate",
@@ -17,4 +18,5 @@ __all__ = [
     "CRITIC_REVIEW_PROMPT",
     "REPORTER_SUMMARY_PROMPT",
     "TOPIC_IDENTIFICATION_PROMPT",
+    "SUMMARY_RELEVANCE_PROMPT",
 ]

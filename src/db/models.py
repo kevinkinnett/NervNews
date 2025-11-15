@@ -119,8 +119,64 @@ class Summary(Base):
     iteration_count = Column(Integer, nullable=False, default=0)
     status = Column(String(50), nullable=False, default="draft")
 
+    evaluation = relationship(
+        "SummaryEvaluation",
+        back_populates="summary",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"<Summary id={self.id} window=({self.window_start}, {self.window_end}) status={self.status}>"
 
 
-__all__ = ["Feed", "Article", "ArticleIngestionLog", "Summary"]
+class SummaryEvaluation(Base):
+    __tablename__ = "summary_evaluations"
+
+    id = Column(Integer, primary_key=True)
+    summary_id = Column(Integer, ForeignKey("summaries.id", ondelete="CASCADE"), nullable=False, unique=True)
+    profile_snapshot = Column(Text, nullable=True)
+    ratings_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    summary = relationship("Summary", back_populates="evaluation")
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<SummaryEvaluation summary_id={self.summary_id}>"
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<UserProfile id={self.id} title={self.title!r} active={self.is_active}>"
+
+
+class AppConfig(Base):
+    __tablename__ = "app_config"
+
+    key = Column(String(255), primary_key=True)
+    value_json = Column(Text, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<AppConfig key={self.key!r}>"
+
+
+__all__ = [
+    "Feed",
+    "Article",
+    "ArticleIngestionLog",
+    "Summary",
+    "SummaryEvaluation",
+    "UserProfile",
+    "AppConfig",
+]

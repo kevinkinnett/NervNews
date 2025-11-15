@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 style="margin-bottom:1rem;">Operations admin</h2>
+{% if message %}
+<div class="alert">{{ message }}</div>
+{% endif %}
+<div class="card">
+    <h3 style="margin-top:0;">Feeds</h3>
+    <p style="color:#475569;">Add or adjust tracked sources. Schedules shorter than 60 seconds are automatically rounded up.</p>
+    <h4>Create new feed</h4>
+    <form method="post" action="/admin/feeds">
+        <div class="grid two">
+            <div>
+                <label for="feed-name">Name</label>
+                <input id="feed-name" type="text" name="name" required placeholder="World Service" />
+            </div>
+            <div>
+                <label for="feed-url">URL</label>
+                <input id="feed-url" type="text" name="url" required placeholder="https://example.com/rss" />
+            </div>
+            <div>
+                <label for="feed-schedule">Schedule (seconds)</label>
+                <input id="feed-schedule" type="number" min="60" name="schedule_seconds" value="900" />
+                <small>Polling cadence per feed.</small>
+            </div>
+            <div>
+                <label>&nbsp;</label>
+                <div>
+                    <label><input type="checkbox" name="enabled" checked /> Enabled</label>
+                </div>
+            </div>
+        </div>
+        <button type="submit">Create feed</button>
+    </form>
+    <h4 style="margin-top:2rem;">Existing feeds</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>URL</th>
+                <th>Schedule</th>
+                <th>Enabled</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for feed in feeds %}
+            <tr>
+                <td colspan="5">
+                    <form method="post" action="/admin/feeds/{{ feed.id }}/update" style="width:100%;">
+                        <div class="grid two">
+                            <div>
+                                <label>Name</label>
+                                <input type="text" name="name" value="{{ feed.name }}" required />
+                            </div>
+                            <div>
+                                <label>URL</label>
+                                <input type="text" name="url" value="{{ feed.url }}" required />
+                            </div>
+                            <div>
+                                <label>Schedule (seconds)</label>
+                                <input type="number" name="schedule_seconds" value="{{ feed.schedule_seconds }}" min="60" />
+                            </div>
+                            <div>
+                                <label>Enabled</label>
+                                <input type="checkbox" name="enabled" {% if feed.enabled %}checked{% endif %} />
+                            </div>
+                        </div>
+                        <button type="submit">Save</button>
+                    </form>
+                    <form method="post" action="/admin/feeds/{{ feed.id }}/delete" style="display:inline-block; margin-left:0.5rem;">
+                        <button type="submit" class="secondary">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">No feeds configured.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="grid two">
+    <div class="card">
+        <h3 style="margin-top:0;">Summarisation cadence</h3>
+        <p style="color:#475569;">The scheduler reloads configuration every 60 seconds without downtime.</p>
+        <form method="post" action="/admin/settings/scheduler">
+            <label for="interval">Interval (seconds)</label>
+            <input id="interval" type="number" min="300" name="interval_seconds" value="{{ interval }}" />
+            <small>Minimum 5 minutes recommended to allow ingestion batches.</small>
+            <button type="submit" style="margin-top:0.75rem;">Update interval</button>
+        </form>
+    </div>
+    <div class="card">
+        <h3 style="margin-top:0;">Model configuration</h3>
+        <p style="color:#475569;">Specify which local model is loaded for enrichment and summarisation.</p>
+        <form method="post" action="/admin/settings/llm">
+            <label for="provider">Provider</label>
+            <input id="provider" type="text" name="provider" value="{{ provider }}" required />
+            <label for="model-path">Model path</label>
+            <input id="model-path" type="text" name="model_path" value="{{ model_path }}" required />
+            <small>Path should be readable by the scheduler host. Reload occurs automatically.</small>
+            <button type="submit" style="margin-top:0.75rem;">Save configuration</button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin-top:0;">Audience profile</h3>
+    <p style="color:#475569;">Provide detailed guidance for the relevance critic. Minimum 40 characters.</p>
+    <form method="post" action="/admin/profile">
+        <label for="profile-title">Title</label>
+        <input id="profile-title" type="text" name="title" value="{{ profile.title if profile else '' }}" placeholder="Executive Intelligence" />
+        <label for="profile-content">Profile brief</label>
+        <textarea id="profile-content" name="content" required>{{ profile.content if profile else '' }}</textarea>
+        <small>Describe decision-makers, alert thresholds, and information priorities.</small>
+        <button type="submit" style="margin-top:0.75rem;">Update profile</button>
+    </form>
+</div>
+{% endblock %}

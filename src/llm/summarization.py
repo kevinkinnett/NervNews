@@ -5,18 +5,19 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.config.settings import SummarizationSettings
-from src.db.models import Article, Summary
+from src.db.models import Article, Summary, SummaryEvaluation, UserProfile
 from src.db.session import session_scope
 from src.llm.client import LLMClient, LLMClientError
 from src.llm.prompts import (
     CRITIC_REVIEW_PROMPT,
     REPORTER_SUMMARY_PROMPT,
+    SUMMARY_RELEVANCE_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ class SummaryOrchestrationService:
             feedback_note = ""
             iteration = 0
             final_payload = None
+            profile = self._load_user_profile(session)
 
             try:
                 while iteration < self._settings.max_iterations:
@@ -106,6 +108,12 @@ class SummaryOrchestrationService:
 
                 summary_record.final_json = json.dumps(final_payload)
                 summary_record.status = "completed"
+                self._evaluate_and_store(
+                    session=session,
+                    summary_record=summary_record,
+                    final_payload=final_payload,
+                    profile=profile,
+                )
                 logger.info(
                     "Summary %s completed for %d articles after %d iterations",
                     summary_record.id,
@@ -119,6 +127,15 @@ class SummaryOrchestrationService:
                 logger.exception("Unexpected error during summarisation cycle")
                 summary_record.status = "error"
                 raise
+
+    def update_settings(self, settings: SummarizationSettings) -> None:
+        """Apply updated summarisation parameters at runtime."""
+
+        self._settings = settings
+
+    @property
+    def settings(self) -> SummarizationSettings:
+        return self._settings
 
     def _compute_window_start(self, now: datetime) -> datetime:
         interval = timedelta(seconds=self._settings.interval_seconds)
@@ -202,6 +219,15 @@ class SummaryOrchestrationService:
             historical.extend(bucket)
         return historical
 
+    def _load_user_profile(self, session: Session) -> Optional[UserProfile]:
+        profile = (
+            session.query(UserProfile)
+            .filter(UserProfile.is_active.is_(True))
+            .order_by(UserProfile.updated_at.desc())
+            .first()
+        )
+        return profile
+
     def _invoke_reporter(
         self,
         *,
@@ -240,6 +266,70 @@ class SummaryOrchestrationService:
                 "draft_summary": reporter_payload.get("summary", ""),
                 "draft_key_points": key_points_rendered or "(no key points)",
                 "context_digest": context_digest or "(no context)",
+            },
+        )
+        return payload
+
+    def _evaluate_and_store(
+        self,
+        *,
+        session: Session,
+        summary_record: Summary,
+        final_payload: dict,
+        profile: Optional[UserProfile],
+    ) -> None:
+        key_points = final_payload.get("key_points") or []
+        if not isinstance(key_points, list):
+            key_points = []
+
+        if not key_points:
+            evaluation_payload = {
+                "overall_relevance": {
+                    "score": 0,
+                    "label": "Low",
+                    "explanation": "No key points were generated for this summary.",
+                },
+                "overall_criticality": {
+                    "score": 0,
+                    "label": "Low",
+                    "explanation": "No key points were generated for this summary.",
+                },
+                "items": [],
+            }
+        else:
+            try:
+                evaluation_payload = self._invoke_relevance(
+                    final_payload=final_payload,
+                    key_points=key_points,
+                    profile=profile,
+                )
+            except LLMClientError:
+                logger.exception(
+                    "Failed to rate summary %s for relevance; skipping evaluation",
+                    summary_record.id,
+                )
+                return
+
+        evaluation = summary_record.evaluation or SummaryEvaluation(summary_id=summary_record.id)
+        evaluation.profile_snapshot = profile.content if profile else None
+        evaluation.ratings_json = json.dumps(evaluation_payload)
+        session.add(evaluation)
+
+    def _invoke_relevance(
+        self,
+        *,
+        final_payload: dict,
+        key_points: Sequence[str],
+        profile: Optional[UserProfile],
+    ) -> dict:
+        key_points_rendered = "\n".join(f"- {point}" for point in key_points)
+        payload = self._llm_client.generate_structured(
+            SUMMARY_RELEVANCE_PROMPT,
+            {
+                "profile": (profile.content if profile else "General newsroom audience"),
+                "headline": final_payload.get("headline", ""),
+                "summary": final_payload.get("summary", ""),
+                "key_points": key_points_rendered,
             },
         )
         return payload
