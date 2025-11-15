@@ -1,6 +1,6 @@
 # Default NervNews configuration
 
-database_url: sqlite:///nervnews.db
+database_url: sqlite:///data/nervnews.db
 request_timeout: 10
 user_agent: NervNewsBot/0.1
 

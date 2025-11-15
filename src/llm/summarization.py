@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import List, Optional, Sequence
 
@@ -19,6 +20,7 @@ from src.llm.prompts import (
     REPORTER_SUMMARY_PROMPT,
     SUMMARY_RELEVANCE_PROMPT,
 )
+from src.telemetry import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,9 @@ class SummaryOrchestrationService:
     def run_cycle(self) -> None:
         """Run a single summarisation cycle."""
 
+        timer_start = time.perf_counter()
+        status = "skipped"
+        article_count = 0
         now = datetime.utcnow()
         window_start = self._compute_window_start(now)
         window_end = now
@@ -46,13 +51,24 @@ class SummaryOrchestrationService:
         with session_scope(self._session_factory) as session:
             recent_articles = self._fetch_recent_articles(session, window_start, window_end)
             if not recent_articles:
+                metrics.record_summary_cycle(
+                    article_count=0,
+                    duration_seconds=time.perf_counter() - timer_start,
+                    status="skipped",
+                )
                 logger.info(
                     "No new articles ready for summarisation between %s and %s",
                     window_start,
                     window_end,
+                    extra={
+                        "event": "summary.skipped",
+                        "window_start": window_start.isoformat(),
+                        "window_end": window_end.isoformat(),
+                    },
                 )
                 return
 
+            article_count = len(recent_articles)
             summary_record = Summary(
                 window_start=window_start,
                 window_end=window_end,
@@ -114,19 +130,41 @@ class SummaryOrchestrationService:
                     final_payload=final_payload,
                     profile=profile,
                 )
+                status = "completed"
                 logger.info(
                     "Summary %s completed for %d articles after %d iterations",
                     summary_record.id,
                     len(recent_articles),
                     summary_record.iteration_count,
+                    extra={
+                        "event": "summary.completed",
+                        "summary_id": summary_record.id,
+                        "articles": len(recent_articles),
+                        "iterations": summary_record.iteration_count,
+                    },
                 )
             except LLMClientError:
-                logger.exception("Summarisation cycle failed due to LLM error")
+                status = "llm_error"
+                logger.exception(
+                    "Summarisation cycle failed due to LLM error",
+                    extra={"event": "summary.llm_error", "summary_id": summary_record.id},
+                )
                 summary_record.status = "error"
             except Exception:
-                logger.exception("Unexpected error during summarisation cycle")
+                status = "error"
+                logger.exception(
+                    "Unexpected error during summarisation cycle",
+                    extra={"event": "summary.error", "summary_id": summary_record.id},
+                )
                 summary_record.status = "error"
                 raise
+            finally:
+                duration = time.perf_counter() - timer_start
+                metrics.record_summary_cycle(
+                    article_count=article_count,
+                    duration_seconds=duration,
+                    status=status,
+                )
 
     def update_settings(self, settings: SummarizationSettings) -> None:
         """Apply updated summarisation parameters at runtime."""

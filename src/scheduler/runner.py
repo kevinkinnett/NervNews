@@ -31,15 +31,9 @@ from src.llm import (
     LLMClientError,
     SummaryOrchestrationService,
 )
+from src.telemetry import configure_logging, configure_metrics_from_env
 
 logger = logging.getLogger(__name__)
-
-
-def _configure_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
 
 
 def _feed_job_id(feed: FeedSettings) -> str:
@@ -80,7 +74,11 @@ def _sync_feed_jobs(
     }
     for job_id in existing - desired.keys():
         scheduler.remove_job(job_id)
-        logger.info("Removed feed schedule %s", job_id)
+        logger.info(
+            "Removed feed schedule %s",
+            job_id,
+            extra={"event": "scheduler.feed_removed", "job_id": job_id},
+        )
 
     for job_id, feed in desired.items():
         scheduler.add_job(
@@ -96,6 +94,12 @@ def _sync_feed_jobs(
             feed.name,
             feed.url,
             feed.schedule_seconds,
+            extra={
+                "event": "scheduler.feed_scheduled",
+                "feed": feed.name,
+                "url": feed.url,
+                "interval_seconds": feed.schedule_seconds,
+            },
         )
 
 
@@ -119,6 +123,10 @@ def _register_jobs(
     logger.info(
         "Scheduled summarisation job every %ss",
         summarization_interval,
+        extra={
+            "event": "scheduler.summary_scheduled",
+            "interval_seconds": summarization_interval,
+        },
     )
 
 
@@ -130,10 +138,14 @@ def _run_ingestion_job(
     new_articles = ingestion_service.ingest(feed)
     if new_articles:
         logger.info(
-            "Feed %s produced %d new articles. IDs=%s",
+            "Feed %s produced %d new articles",
             feed.name,
             len(new_articles),
-            new_articles,
+            extra={
+                "event": "feed.ingested",
+                "feed": feed.name,
+                "article_ids": new_articles,
+            },
         )
         try:
             enrichment_service.enrich_articles(new_articles)
@@ -143,7 +155,8 @@ def _run_ingestion_job(
 
 def run_scheduler(settings: AppSettings | None = None) -> BackgroundScheduler:
     """Start the APScheduler-based ingestion pipeline."""
-    _configure_logging()
+    configure_logging()
+    configure_metrics_from_env()
     if settings is None:
         settings = load_settings()
 
@@ -238,6 +251,10 @@ def run_scheduler(settings: AppSettings | None = None) -> BackgroundScheduler:
                 logger.info(
                     "Rescheduled summarisation interval to %ss",
                     summarization_settings_new.interval_seconds,
+                    extra={
+                        "event": "scheduler.summary_rescheduled",
+                        "interval_seconds": summarization_settings_new.interval_seconds,
+                    },
                 )
 
             provider = get_config(session, CONFIG_LLM_PROVIDER, settings.llm.provider)
@@ -256,7 +273,11 @@ def run_scheduler(settings: AppSettings | None = None) -> BackgroundScheduler:
     )
 
     scheduler.start()
-    logger.info("Scheduler started with %d jobs", len(scheduler.get_jobs()))
+    logger.info(
+        "Scheduler started with %d jobs",
+        len(scheduler.get_jobs()),
+        extra={"event": "scheduler.started", "job_count": len(scheduler.get_jobs())},
+    )
     return scheduler
 
 

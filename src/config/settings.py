@@ -17,9 +17,9 @@ ENV_SETTINGS_PATH = "NERVNEWS_SETTINGS"
 class FeedSettings:
     """Configuration for a single RSS/Atom feed."""
 
-    id: Optional[int] = None
     name: str
     url: str
+    id: Optional[int] = None
     schedule_seconds: int = 900
     enabled: bool = True
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -66,7 +66,7 @@ class UserProfileSettings:
 class AppSettings:
     """Top-level application settings loaded from YAML."""
 
-    database_url: str = "sqlite:///nervnews.db"
+    database_url: str = "sqlite:///data/nervnews.db"
     feeds: List[FeedSettings] = field(default_factory=list)
     request_timeout: int = 10
     user_agent: str = "NervNewsBot/0.1"

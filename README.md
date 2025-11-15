@@ -1,45 +1,100 @@
 # NervNews
 
 NervNews provides an RSS ingestion pipeline that polls configured feeds, extracts
-full article content, and stores the results in SQLite for downstream
-processing.
+full article content, enriches articles with LLM generated metadata, and stores
+the results in SQLite for downstream processing.
 
-## Getting Started
+## Environment setup
 
-1. **Install dependencies**
+- **Python version** – Python 3.11 is recommended. Create an isolated
+  environment before installing dependencies:
 
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
+  ```bash
+  python -m venv .venv
+  source .venv/bin/activate
+  pip install -r requirements.txt
+  pip install -r requirements-dev.txt  # optional: testing utilities
+  ```
 
-2. **Configure feeds**
+- **GPU & LLM acceleration** – NervNews runs on CPU-only hosts but benefits from
+  a CUDA capable GPU when serving larger llama.cpp models. See
+  [`docs/ops.md`](docs/ops.md) for driver, CUDA, and quantisation guidance.
 
-   Edit `config/settings.yaml` (or provide an alternative path via the
-   `NERVNEWS_SETTINGS` environment variable) to list the feeds you want to poll,
-   control their schedule, and define metadata.
+- **Configuration** – Edit `config/settings.yaml` (or point
+  `NERVNEWS_SETTINGS` at an alternate file). The default configuration stores
+  data in `data/nervnews.db` so that the SQLite database can be persisted or
+  mounted inside containers.
 
+## Local workflow
+
+1. **Configure feeds** – Add RSS/Atom feeds in `config/settings.yaml` under the
+   `feeds` section.
+2. **Seed defaults** – Optionally copy `config/seed.example.yaml` and adjust it
+   before the first run; the scheduler automatically loads it when the database
+   is empty.
 3. **Run the scheduler**
 
    ```bash
    python -m src.main
    ```
 
-   The scheduler uses APScheduler to poll each enabled feed at its configured
-   interval. Newly ingested article IDs are recorded in `article_ingestion_logs`
-   for downstream processing.
+   The APScheduler loop polls each feed, records ingestion logs, and triggers
+   LLM enrichment and summarisation cycles.
 
-4. **Launch the dashboard (optional)**
+4. **Launch the dashboard**
 
    ```bash
    uvicorn src.web.main:app --reload
    ```
 
-   The FastAPI dashboard exposes `http://127.0.0.1:8000/` for the newsroom
-   summary view and `http://127.0.0.1:8000/admin` for configuration. All changes
-   made through the admin forms are persisted to the database and picked up by
-   the running scheduler within 60 seconds without downtime.
+   Navigate to `http://127.0.0.1:8000/` for newsroom summaries and
+   `http://127.0.0.1:8000/admin` for configuration. Admin changes are stored in
+   SQLite and reloaded by the scheduler every 60 seconds.
+
+## Testing
+
+Run the test suite with:
+
+```bash
+pytest
+```
+
+The tests cover ingestion, enrichment, and summarisation pipelines and use an
+in-memory SQLite database.
+
+## Telemetry
+
+- **Structured logging** – set `NERVNEWS_LOG_FORMAT=json` (or `structured`) to
+  emit JSON logs. Adjust `NERVNEWS_LOG_LEVEL` to control verbosity.
+- **Prometheus metrics** – expose counters and histograms by defining
+  `NERVNEWS_METRICS_PORT`. Metrics endpoints start automatically on the chosen
+  port (for example `http://localhost:9000/metrics`).
+
+## Docker & Compose
+
+The provided `Dockerfile` packages the scheduler, FastAPI service, and dashboard
+into a single image. `docker-compose.yml` wires three containers together:
+
+- `service` – FastAPI backend + metrics exporter on port 8000.
+- `scheduler` – background ingestion and summarisation runner.
+- `web` – dashboard-focused instance listening on port 8080.
+
+All services mount `./config`, `./models`, and `./data` so that model weights
+and the SQLite database persist between restarts.
+
+```bash
+docker compose up --build
+```
+
+Refer to [`docs/ops.md`](docs/ops.md) for GPU provisioning, model management,
+and operational runbooks.
+
+## Scaling roadmap
+
+The project is designed to scale via queued work distribution and horizontal
+workers. A high-level plan is included in [`docs/ops.md`](docs/ops.md#scaling-and-future-work),
+covering Redis-based ingestion queues, multi-process enrichment workers, and
+back-pressure controls for bursty feed updates.
 
 ## Seed configuration
 

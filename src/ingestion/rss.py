@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from src.config.settings import FeedSettings
 from src.db.models import Article, ArticleIngestionLog, Feed
 from src.ingestion.extractor import ArticleExtractor, ExtractedArticle
+from src.telemetry import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -57,14 +58,31 @@ class RSSIngestionService:
 
     def ingest(self, feed_config: FeedSettings) -> List[int]:
         """Poll the feed and return IDs of newly created articles."""
-        logger.info("Polling feed %s", feed_config.url)
+        start_time = time.perf_counter()
+        article_count = 0
+        status = "success"
+        logger.info(
+            "Polling feed %s",
+            feed_config.url,
+            extra={"event": "feed.poll", "feed": feed_config.name, "url": feed_config.url},
+        )
         parsed = feedparser.parse(feed_config.url)
         if parsed.bozo:
-            logger.warning("Feed parsing issues encountered for %s: %s", feed_config.url, parsed.bozo_exception)
+            logger.warning(
+                "Feed parsing issues encountered for %s: %s",
+                feed_config.url,
+                parsed.bozo_exception,
+                extra={"event": "feed.parse_warning", "feed": feed_config.name},
+            )
 
         entries = getattr(parsed, "entries", []) or []
         if not entries:
-            logger.info("No entries found for %s", feed_config.url)
+            logger.info(
+                "No entries found for %s",
+                feed_config.url,
+                extra={"event": "feed.empty", "feed": feed_config.name},
+            )
+            status = "empty"
             return []
 
         new_article_ids: List[int] = []
@@ -104,15 +122,33 @@ class RSSIngestionService:
 
             feed.last_polled_at = datetime.utcnow()
             session.commit()
+            article_count = len(new_article_ids)
+            status = "success" if article_count else "empty"
         except Exception:
             session.rollback()
-            logger.exception("Failed to ingest feed %s", feed_config.url)
+            status = "error"
+            logger.exception(
+                "Failed to ingest feed %s",
+                feed_config.url,
+                extra={"event": "feed.ingest_error", "feed": feed_config.name},
+            )
             raise
         finally:
             session.close()
+            metrics.record_ingestion(
+                feed_config.name,
+                article_count,
+                time.perf_counter() - start_time,
+                status,
+            )
 
         if new_article_ids:
-            logger.info("Created %d new articles for %s", len(new_article_ids), feed_config.name)
+            logger.info(
+                "Created %d new articles for %s",
+                len(new_article_ids),
+                feed_config.name,
+                extra={"event": "feed.articles_created", "feed": feed_config.name, "count": len(new_article_ids)},
+            )
         return new_article_ids
 
     def _get_or_create_feed(self, session: Session, feed_config: FeedSettings) -> Feed:
