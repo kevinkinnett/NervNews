@@ -38,6 +38,7 @@ class LLMSettings:
     top_p: float = 0.95
     repeat_penalty: float = 1.1
     max_retries: int = 3
+    debug_payloads: bool = False
 
 
 @dataclass
@@ -120,6 +121,7 @@ def _parse_llm(entry: Dict[str, Any]) -> LLMSettings:
         top_p=float(entry.get("top_p", 0.95)),
         repeat_penalty=float(entry.get("repeat_penalty", 1.1)),
         max_retries=int(entry.get("max_retries", 3)),
+        debug_payloads=bool(entry.get("debug_payloads", False)),
     )
 
 

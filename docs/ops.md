@@ -36,6 +36,9 @@ models, and operating the ingestion stack in production-like environments.
    UI) so NervNews targets the correct model name and host.
 4. The scheduler polls for configuration changes every 60 seconds; no restart is
    required after updating the admin form.
+5. Enable `llm.debug_payloads` for short periods when troubleshooting failed
+   generations. NervNews will log redacted request/response payloads at DEBUG
+   level to help operators diagnose backend issues.
 
 ## Container orchestration
 

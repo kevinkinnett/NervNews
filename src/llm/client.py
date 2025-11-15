@@ -109,28 +109,40 @@ class LLMClient:
         temperature = self._runtime.temperature
 
         for attempt in range(1, attempts + 1):
+            debug_info: Optional[Dict[str, Any]] = None
+            debug_logged = False
             try:
-                payload = self._invoke(
+                payload, debug_info = self._invoke(
                     client=client,
                     error_cls=error_cls,
                     template=template,
                     variables=variables,
                     temperature=temperature if attempt == 1 else 0.0,
                 )
+                debug_logged = self._log_debug_payload(template.name, debug_info)
                 template.validate(payload)
                 return payload
             except Exception as exc:
+                if isinstance(exc, LLMClientError):
+                    failure = exc
+                    debug_info = exc.debug_info
+                else:
+                    failure = LLMClientError(str(exc), debug_info)
+                if not debug_logged:
+                    debug_logged = self._log_debug_payload(template.name, debug_info)
+
                 logger.warning(
                     "Attempt %d/%d failed for %s: %s",
                     attempt,
                     attempts,
                     template.name,
-                    exc,
+                    failure,
                 )
                 if attempt >= attempts:
                     raise LLMClientError(
-                        f"Failed to generate structured response for {template.name}"
-                    ) from exc
+                        f"Failed to generate structured response for {template.name}",
+                        failure.debug_info,
+                    ) from failure
 
         raise LLMClientError(f"Failed to invoke LLM for {template.name}")
 
@@ -142,7 +154,7 @@ class LLMClient:
         template: JsonPromptTemplate,
         variables: Dict[str, Any],
         temperature: float,
-    ) -> Dict[str, Any]:
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Invoke the chat completion endpoint and parse JSON."""
 
         user_prompt = template.render_user_prompt(**variables)
@@ -158,32 +170,104 @@ class LLMClient:
             self._runtime.max_tokens,
         )
 
+        payload = {
+            "model": self._settings.model,
+            "messages": messages,
+            "options": {
+                "temperature": temperature,
+                "top_p": self._runtime.top_p,
+                "repeat_penalty": self._runtime.repeat_penalty,
+                "num_predict": self._runtime.max_tokens,
+                "num_ctx": self._settings.context_window,
+            },
+        }
+
+        debug_info: Dict[str, Any] = {
+            "method": "POST",
+            "url": f"{self._settings.base_url}/api/chat",
+            "headers": self._build_debug_headers(),
+            "payload": payload,
+        }
+
         try:
             result = client.chat(
                 model=self._settings.model,
                 messages=messages,
-                options={
-                    "temperature": temperature,
-                    "top_p": self._runtime.top_p,
-                    "repeat_penalty": self._runtime.repeat_penalty,
-                    "num_predict": self._runtime.max_tokens,
-                    "num_ctx": self._settings.context_window,
-                },
+                options=payload["options"],
             )
         except error_cls as exc:
-            raise ValueError(f"Ollama returned an error: {exc}") from exc
+            debug_info["error"] = str(exc)
+            raise LLMClientError(f"Ollama returned an error: {exc}", debug_info) from exc
         except Exception as exc:  # pragma: no cover - backend errors
-            raise ValueError(f"Unexpected Ollama failure: {exc}") from exc
+            debug_info["error"] = str(exc)
+            raise LLMClientError(f"Unexpected Ollama failure: {exc}", debug_info) from exc
 
         content = self._extract_content(result)
         if not content:
-            raise ValueError("Empty response from LLM")
+            debug_info["response_body"] = ""
+            debug_info["error"] = "Empty response from LLM"
+            raise LLMClientError("Empty response from LLM", debug_info)
 
-        payload = self._parse_json(content)
-        if not isinstance(payload, dict):
-            raise ValueError("Response was not a JSON object")
+        debug_info["response_body"] = content
 
-        return payload
+        try:
+            parsed = self._parse_json(content)
+        except Exception as exc:
+            debug_info["error"] = f"Failed to parse JSON response: {exc}"
+            raise LLMClientError("Failed to parse JSON response", debug_info) from exc
+        if not isinstance(parsed, dict):
+            debug_info["error"] = "Response was not a JSON object"
+            raise LLMClientError("Response was not a JSON object", debug_info)
+
+        return parsed, debug_info
+
+    def _build_debug_headers(self) -> Dict[str, str]:
+        """Return the headers used for debug logging."""
+
+        return {"Content-Type": "application/json"}
+
+    def _log_debug_payload(
+        self, template_name: str, debug_info: Optional[Dict[str, Any]]
+    ) -> bool:
+        """Emit redacted debug information when enabled."""
+
+        if not self._settings.debug_payloads or not debug_info:
+            return False
+
+        redacted = self._redact_sensitive(debug_info)
+        try:
+            serialised = json.dumps(redacted, ensure_ascii=False, sort_keys=True)
+        except TypeError:
+            serialised = str(redacted)
+
+        logger.debug("LLM debug payload for %s: %s", template_name, serialised)
+        return True
+
+    @classmethod
+    def _redact_sensitive(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: ("***" if cls._is_sensitive_key(key) else cls._redact_sensitive(val))
+                for key, val in value.items()
+            }
+        if isinstance(value, list):
+            return [cls._redact_sensitive(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(cls._redact_sensitive(item) for item in value)
+        return value
+
+    @staticmethod
+    def _is_sensitive_key(key: str) -> bool:
+        lowered = key.lower()
+        sensitive_tokens = (
+            "authorization",
+            "api_key",
+            "apikey",
+            "token",
+            "secret",
+            "password",
+        )
+        return any(token in lowered for token in sensitive_tokens)
 
     @staticmethod
     def _extract_content(result: Dict[str, Any]) -> str:
