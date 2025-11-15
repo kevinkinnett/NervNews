@@ -22,6 +22,15 @@ summarization:
   max_recent_articles: 15
   max_historical_per_topic: 3
 
+user_profile:
+  title: Global Affairs Desk
+  content: |
+    The Global Affairs Desk focuses on geopolitical risk, humanitarian crises,
+    and policy decisions impacting multinational technology organisations.
+    Prioritise coverage involving cybersecurity, supply-chain disruption,
+    regulatory shifts, or emerging conflict zones. Highlight actionable
+    intelligence and flag items requiring executive escalation.
+
 feeds:
   - name: Example Feed
     url: https://example.com/rss

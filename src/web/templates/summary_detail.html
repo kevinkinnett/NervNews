@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="/" style="display:inline-block; margin-bottom:1rem;">← Back to dashboard</a>
+<div class="card">
+    <h2 style="margin-top:0;">Summary window</h2>
+    <p><strong>Window:</strong> {{ summary.window_start }} → {{ summary.window_end }}</p>
+    <p><strong>Status:</strong> {{ summary.status }}</p>
+    <p><strong>Iterations:</strong> {{ summary.iteration_count }}</p>
+</div>
+<div class="grid two">
+    <div class="card">
+        <h3 style="margin-top:0;">Final copy</h3>
+        <h4>{{ payload.headline }}</h4>
+        <p>{{ payload.summary }}</p>
+        <ul>
+            {% for point in payload.key_points %}
+            <li>{{ point }}</li>
+            {% else %}
+            <li>No key points recorded.</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <div class="card">
+        <h3 style="margin-top:0;">Evaluation</h3>
+        {% if evaluation %}
+        <p><strong>Overall relevance:</strong> {{ evaluation.overall_relevance.label }} ({{ evaluation.overall_relevance.score }})</p>
+        <p><strong>Overall criticality:</strong> {{ evaluation.overall_criticality.label }} ({{ evaluation.overall_criticality.score }})</p>
+        <p style="color:#475569;">{{ evaluation.overall_relevance.explanation }}</p>
+        <h4>Key point review</h4>
+        <ul>
+            {% for item in evaluation.items %}
+            <li style="margin-bottom:0.75rem;">
+                <div style="font-weight:600;">{{ item.key_point }}</div>
+                <div>
+                    <span class="badge badge-{{ 'high' if item.relevance.label|lower == 'high' else 'medium' if item.relevance.label|lower == 'medium' else 'low' }}">Relevance: {{ item.relevance.label }} ({{ item.relevance.score }})</span>
+                    <span class="badge badge-{{ 'high' if item.criticality.label|lower == 'high' else 'medium' if item.criticality.label|lower == 'medium' else 'low' }}">Criticality: {{ item.criticality.label }} ({{ item.criticality.score }})</span>
+                </div>
+                <p style="color:#475569;">{{ item.explanation }}</p>
+                <p><em>Recommended action: {{ item.escalation|title }}</em></p>
+            </li>
+            {% else %}
+            <li>No evaluation recorded.</li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p>No evaluation record for this summary.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

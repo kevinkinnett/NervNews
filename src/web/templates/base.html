@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>NervNews Control Panel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: "Inter", "Segoe UI", sans-serif;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background: #f4f6f8;
+            color: #1f2933;
+        }
+        header {
+            background: #1f2933;
+            color: #f9fbfd;
+            padding: 1.25rem 2rem;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        nav a {
+            color: #cbd2d9;
+            text-decoration: none;
+            margin-right: 1rem;
+            font-weight: 600;
+        }
+        nav a:hover {
+            color: #f9fbfd;
+        }
+        main {
+            padding: 2rem;
+            max-width: 980px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+            padding: 1.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+        .badge-high {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .badge-medium {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .badge-low {
+            background: #dcfce7;
+            color: #166534;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table th, table td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        form {
+            display: inline-block;
+        }
+        input[type="text"], input[type="number"], textarea, select {
+            width: 100%;
+            padding: 0.55rem 0.65rem;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
+            margin-bottom: 0.75rem;
+            font-size: 0.95rem;
+        }
+        textarea {
+            min-height: 160px;
+        }
+        button {
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            padding: 0.55rem 1.2rem;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+        button.secondary {
+            background: #f1f5f9;
+            color: #1f2933;
+        }
+        .grid {
+            display: grid;
+            gap: 1.25rem;
+        }
+        .grid.two {
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        }
+        .alert {
+            background: #ecfccb;
+            color: #365314;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+        }
+        footer {
+            text-align: center;
+            padding: 1rem 0;
+            color: #64748b;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>NervNews Operations</h1>
+    <nav>
+        <a href="/">Dashboard</a>
+        <a href="/admin">Admin</a>
+    </nav>
+</header>
+<main>
+    {% block content %}{% endblock %}
+</main>
+<footer>
+    &copy; NervNews Operations Desk
+</footer>
+</body>
+</html>

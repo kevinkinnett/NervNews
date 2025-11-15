@@ -1,0 +1,203 @@
+"""Administrative views and form handlers."""
+from __future__ import annotations
+
+from typing import Optional
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.orm import Session
+
+from src.config.store import (
+    CONFIG_LLM_MODEL_PATH,
+    CONFIG_LLM_PROVIDER,
+    CONFIG_SUMMARIZATION_INTERVAL,
+    CONFIG_ACTIVE_PROFILE_ID,
+    get_config,
+    set_config,
+)
+from src.db.models import Feed, UserProfile
+from src.web.dependencies import get_session, get_templates
+
+router = APIRouter()
+
+
+def _parse_bool(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    return value.lower() in {"true", "1", "on", "yes", "y"}
+
+
+def _redirect(path: str, message: Optional[str] = None) -> RedirectResponse:
+    url = path
+    if message:
+        query = urlencode({"msg": message})
+        url = f"{path}?{query}"
+    return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/", response_class=HTMLResponse)
+def admin_home(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    templates = get_templates(request)
+    feeds = session.query(Feed).order_by(Feed.name.asc()).all()
+    active_profile = (
+        session.query(UserProfile)
+        .filter(UserProfile.is_active.is_(True))
+        .order_by(UserProfile.updated_at.desc())
+        .first()
+    )
+    interval = get_config(
+        session,
+        CONFIG_SUMMARIZATION_INTERVAL,
+        3600,
+    )
+    provider = get_config(session, CONFIG_LLM_PROVIDER, "llama_cpp")
+    model_path = get_config(session, CONFIG_LLM_MODEL_PATH, "models/model.gguf")
+    message = request.query_params.get("msg")
+
+    context = {
+        "request": request,
+        "feeds": feeds,
+        "profile": active_profile,
+        "interval": interval,
+        "provider": provider,
+        "model_path": model_path,
+        "message": message,
+    }
+    return templates.TemplateResponse("admin/index.html", context)
+
+
+@router.post("/feeds", response_class=RedirectResponse)
+def create_feed(
+    name: str = Form(...),
+    url: str = Form(...),
+    schedule_seconds: int = Form(...),
+    enabled: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    clean_name = name.strip()
+    clean_url = url.strip()
+    if not clean_name or not clean_url:
+        raise HTTPException(status_code=400, detail="Feed name and URL are required")
+    if schedule_seconds < 60:
+        raise HTTPException(status_code=400, detail="Schedule must be at least 60 seconds")
+
+    existing = session.query(Feed).filter(Feed.url == clean_url).one_or_none()
+    if existing:
+        raise HTTPException(status_code=400, detail="Feed URL already exists")
+
+    feed = Feed(
+        name=clean_name,
+        url=clean_url,
+        schedule_seconds=schedule_seconds,
+        enabled=_parse_bool(enabled),
+    )
+    session.add(feed)
+    return _redirect("/admin", "Feed created")
+
+
+@router.post("/feeds/{feed_id}/update", response_class=RedirectResponse)
+def update_feed(
+    feed_id: int,
+    name: str = Form(...),
+    url: str = Form(...),
+    schedule_seconds: int = Form(...),
+    enabled: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    feed = session.get(Feed, feed_id)
+    if feed is None:
+        raise HTTPException(status_code=404, detail="Feed not found")
+    if schedule_seconds < 60:
+        raise HTTPException(status_code=400, detail="Schedule must be at least 60 seconds")
+
+    feed.name = name.strip()
+    feed.url = url.strip()
+    conflict = (
+        session.query(Feed)
+        .filter(Feed.url == feed.url, Feed.id != feed_id)
+        .one_or_none()
+    )
+    if conflict:
+        raise HTTPException(status_code=400, detail="Another feed already uses this URL")
+    feed.schedule_seconds = schedule_seconds
+    feed.enabled = _parse_bool(enabled)
+    session.add(feed)
+    return _redirect("/admin", "Feed updated")
+
+
+@router.post("/feeds/{feed_id}/delete", response_class=RedirectResponse)
+def delete_feed(
+    feed_id: int,
+    session: Session = Depends(get_session),
+):
+    feed = session.get(Feed, feed_id)
+    if feed is None:
+        raise HTTPException(status_code=404, detail="Feed not found")
+    session.delete(feed)
+    return _redirect("/admin", "Feed removed")
+
+
+@router.post("/settings/scheduler", response_class=RedirectResponse)
+def update_scheduler_interval(
+    interval_seconds: int = Form(...),
+    session: Session = Depends(get_session),
+):
+    if interval_seconds < 300:
+        raise HTTPException(status_code=400, detail="Summary interval must be >= 300 seconds")
+    set_config(session, CONFIG_SUMMARIZATION_INTERVAL, interval_seconds)
+    return _redirect("/admin", "Summarisation interval updated")
+
+
+@router.post("/settings/llm", response_class=RedirectResponse)
+def update_llm_settings(
+    provider: str = Form(...),
+    model_path: str = Form(...),
+    session: Session = Depends(get_session),
+):
+    clean_provider = provider.strip()
+    clean_model = model_path.strip()
+    if not clean_provider or not clean_model:
+        raise HTTPException(status_code=400, detail="Provider and model path are required")
+    set_config(session, CONFIG_LLM_PROVIDER, clean_provider)
+    set_config(session, CONFIG_LLM_MODEL_PATH, clean_model)
+    return _redirect("/admin", "LLM configuration saved")
+
+
+@router.post("/profile", response_class=RedirectResponse)
+def update_profile(
+    title: str = Form(...),
+    content: str = Form(...),
+    session: Session = Depends(get_session),
+):
+    clean_title = title.strip() or "Audience Profile"
+    clean_content = content.strip()
+    if len(clean_content) < 40:
+        raise HTTPException(status_code=400, detail="Profile content must be at least 40 characters")
+
+    active = (
+        session.query(UserProfile)
+        .filter(UserProfile.is_active.is_(True))
+        .order_by(UserProfile.updated_at.desc())
+        .first()
+    )
+    if active:
+        active.title = clean_title
+        active.content = clean_content
+        profile_id = active.id
+    else:
+        session.query(UserProfile).update({UserProfile.is_active: False})
+        new_profile = UserProfile(title=clean_title, content=clean_content, is_active=True)
+        session.add(new_profile)
+        session.flush()
+        profile_id = new_profile.id
+    set_config(session, CONFIG_ACTIVE_PROFILE_ID, profile_id)
+    return _redirect("/admin", "Profile updated")
+
+
+__all__ = ["router"]

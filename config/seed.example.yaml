@@ -1,0 +1,29 @@
+# Example seed configuration for a fresh NervNews deployment.
+database_url: sqlite:///nervnews.db
+request_timeout: 10
+user_agent: NervNewsBot/0.1
+
+llm:
+  provider: llama_cpp
+  model_path: models/model.gguf
+  temperature: 0.2
+  top_p: 0.95
+  max_output_tokens: 256
+
+summarization:
+  interval_seconds: 3600
+  context_window_chars: 6000
+  max_iterations: 3
+
+feeds:
+  - name: Example Feed
+    url: https://example.com/rss
+    schedule_seconds: 900
+    enabled: true
+
+user_profile:
+  title: Global Affairs Desk
+  content: |
+    Focus on geopolitical, cybersecurity, and regulatory developments with
+    direct impact on multinational technology operations. Prioritise alerts
+    that require executive escalation within 24 hours.

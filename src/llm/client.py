@@ -41,6 +41,34 @@ class LLMClient:
         )
         self._model: Any = None
 
+    @property
+    def settings(self) -> LLMSettings:
+        return self._settings
+
+    def update_settings(self, settings: LLMSettings) -> None:
+        """Update runtime settings and reset the loaded model if required."""
+
+        if settings == self._settings:
+            return
+
+        logger.info(
+            "Updating LLM client configuration (provider=%s -> %s, model=%s -> %s)",
+            self._settings.provider,
+            settings.provider,
+            self._settings.model_path,
+            settings.model_path,
+        )
+        self._settings = settings
+        self._runtime = _RuntimeConfig(
+            max_tokens=settings.max_output_tokens,
+            temperature=settings.temperature,
+            top_p=settings.top_p,
+            repeat_penalty=settings.repeat_penalty,
+            n_threads=settings.threads,
+        )
+        # Reset cached model so it reloads with the new parameters lazily.
+        self._model = None
+
     def _load_model(self) -> Any:  # pragma: no cover - heavy dependency
         if self._model is not None:
             return self._model
