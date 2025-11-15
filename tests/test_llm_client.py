@@ -27,6 +27,11 @@ class _SchemaClient:
         return {"message": {"content": "{\"summary\": \"works\"}"}}
 
 
+class _JSONClient:
+    def chat(self, **kwargs):  # pragma: no cover - simple stub
+        return {"message": {"content": "{\"result\": \"ok\"}"}}
+
+
 def test_generate_structured_logs_debug_payload(monkeypatch, caplog) -> None:
     settings = LLMSettings(
         provider="ollama",
@@ -128,3 +133,41 @@ def test_generate_structured_rejects_non_json_early(monkeypatch) -> None:
     assert cause is not None
     assert "was not JSON" in str(cause)
     assert excinfo.value.debug_info["error"] == "LLM response was not JSON"
+
+
+def test_generate_structured_logs_prompt_usage_and_warns(monkeypatch, caplog) -> None:
+    settings = LLMSettings(
+        provider="ollama",
+        model="dummy-model",
+        base_url="http://localhost:11434",
+        context_window=10,
+        max_retries=1,
+    )
+    client = LLMClient(settings)
+
+    monkeypatch.setattr(client, "_get_client", lambda: (_JSONClient(), _DummyError))
+
+    template = JsonPromptTemplate(
+        name="oversize",
+        system_prompt="System instructions.",
+        user_template="Write a response about:\n{content}",
+        response_schema={
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "required": ["result"],
+        },
+    )
+
+    caplog.set_level(logging.WARNING)
+
+    payload = client.generate_structured(template, {"content": "x" * 400})
+
+    assert payload == {"result": "ok"}
+
+    warning_messages = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert warning_messages, "expected context window warning when prompt is oversized"
+    oversize_records = [record for record in warning_messages if "exceeding context window" in record.message]
+    assert oversize_records, "expected oversize prompt warning"
+    record = oversize_records[-1]
+    assert hasattr(record, "prompt_tokens")
+    assert record.prompt_tokens > settings.context_window

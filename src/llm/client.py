@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple, Type
@@ -162,6 +163,34 @@ class LLMClient:
             {"role": "system", "content": template.system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+
+        prompt_chars = sum(len(message.get("content") or "") for message in messages)
+        prompt_tokens = self._estimate_tokens_from_chars(prompt_chars)
+        prompt_extra = {
+            "event": "llm.prompt.usage",
+            "template": template.name,
+            "prompt_chars": prompt_chars,
+            "prompt_tokens": prompt_tokens,
+            "context_window": self._settings.context_window,
+        }
+        if prompt_tokens > self._settings.context_window:
+            logger.warning(
+                "Prompt for %s estimated at %d chars (~%d tokens) exceeding context window %d",
+                template.name,
+                prompt_chars,
+                prompt_tokens,
+                self._settings.context_window,
+                extra=prompt_extra,
+            )
+        else:
+            logger.debug(
+                "Prompt for %s estimated at %d chars (~%d tokens) within context window %d",
+                template.name,
+                prompt_chars,
+                prompt_tokens,
+                self._settings.context_window,
+                extra=prompt_extra,
+            )
 
         logger.debug(
             "Invoking LLM for %s with temperature %.2f and %d tokens",
@@ -329,6 +358,12 @@ class LLMClient:
             # Some models put the response in "thinking" field
             content = (message.get("thinking") or "").strip()
         return content
+
+    @staticmethod
+    def _estimate_tokens_from_chars(characters: int) -> int:
+        if characters <= 0:
+            return 0
+        return max(1, math.ceil(characters / 4))
 
     @staticmethod
     def _parse_json(raw_text: str) -> Dict[str, Any]:

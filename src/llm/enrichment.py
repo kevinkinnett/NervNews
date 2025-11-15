@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from datetime import datetime
 from typing import Dict, Sequence
@@ -155,17 +156,125 @@ class ArticleEnrichmentService:
         prompt: JsonPromptTemplate,
         variables: Dict[str, str | None],
     ) -> Dict[str, object]:
+        prepared_variables, _ = self._fit_prompt_to_context(prompt, variables)
         try:
-            return self._llm_client.generate_structured(prompt, variables)
+            return self._llm_client.generate_structured(prompt, prepared_variables)
         except LLMClientError as exc:
             logger.warning("Primary enrichment call failed: %s", exc)
             fallback_variables = dict(variables)
             fallback_variables["content"] = variables.get("summary") or variables.get("title")
+            safe_fallback, _ = self._fit_prompt_to_context(prompt, fallback_variables)
             return self._llm_client.generate_structured(
                 prompt,
-                fallback_variables,
+                safe_fallback,
                 max_retries=2,
             )
+
+    def _fit_prompt_to_context(
+        self,
+        prompt: JsonPromptTemplate,
+        variables: Dict[str, str | None],
+    ) -> tuple[Dict[str, str | None], str | None]:
+        """Ensure the prompt inputs stay within the model context window."""
+
+        approx_chars_per_token = 4
+        context_limit = max(self._llm_client.settings.context_window, 0)
+        prepared: Dict[str, str | None] = dict(variables)
+
+        if context_limit <= 0:
+            return prepared, None
+
+        keys = set(prepared.keys()) | {"content", "summary", "title"}
+
+        def _prompt_values(data: Dict[str, str | None]) -> Dict[str, str]:
+            values: Dict[str, str] = {}
+            for key in keys:
+                raw = data.get(key)
+                if raw is None:
+                    values[key] = ""
+                elif isinstance(raw, str):
+                    values[key] = raw
+                else:
+                    values[key] = str(raw)
+            return values
+
+        def _measure(data: Dict[str, str | None]) -> tuple[int, int]:
+            prompt_vars = _prompt_values(data)
+            rendered = prompt.render_user_prompt(**prompt_vars)
+            total_chars = len(prompt.system_prompt or "") + len(rendered)
+            if total_chars <= 0:
+                return 0, 0
+            estimated_tokens = max(1, math.ceil(total_chars / approx_chars_per_token))
+            return total_chars, estimated_tokens
+
+        total_chars, estimated_tokens = _measure(prepared)
+        if estimated_tokens <= context_limit:
+            return prepared, None
+
+        log_extra = {
+            "event": "enrichment.prompt.compaction",
+            "template": prompt.name,
+            "prompt_chars": total_chars,
+            "prompt_tokens": estimated_tokens,
+            "context_window": context_limit,
+        }
+
+        summary_text = prepared.get("summary") or ""
+        content_text = prepared.get("content") or ""
+        title_text = prepared.get("title") or ""
+
+        if summary_text:
+            prepared["content"] = summary_text
+            total_chars, estimated_tokens = _measure(prepared)
+            if estimated_tokens <= context_limit:
+                logger.warning(
+                    "Using article summary for %s due to oversized prompt (chars=%d, tokens~%d, limit=%d)",
+                    prompt.name,
+                    total_chars,
+                    estimated_tokens,
+                    context_limit,
+                    extra=log_extra,
+                )
+                prepared.setdefault("summary", summary_text)
+                return prepared, "summary"
+            prepared["content"] = content_text
+
+        prepared["content"] = ""
+        static_chars, static_tokens = _measure(prepared)
+        prepared["content"] = content_text
+
+        if static_tokens > context_limit:
+            logger.warning(
+                "Prompt for %s exceeds context window even without article content (chars=%d, tokens~%d, limit=%d)",
+                prompt.name,
+                static_chars,
+                static_tokens,
+                context_limit,
+                extra=log_extra,
+            )
+            prepared["content"] = ""
+            return prepared, "empty"
+
+        max_chars = context_limit * approx_chars_per_token
+        allowed_chars = max(0, max_chars - static_chars)
+
+        source_text = content_text or summary_text or title_text
+        truncated_text = (source_text or "")[:allowed_chars]
+        prepared["content"] = truncated_text
+        if not summary_text:
+            prepared.setdefault("summary", truncated_text)
+        keys.update(prepared.keys())
+
+        total_chars, estimated_tokens = _measure(prepared)
+        logger.warning(
+            "Truncated article content for %s to %d chars (~%d tokens) to fit context window %d",
+            prompt.name,
+            len(truncated_text),
+            estimated_tokens,
+            context_limit,
+            extra=log_extra,
+        )
+        return prepared, "truncated"
 
     @staticmethod
     def _to_float(value) -> float | None:
