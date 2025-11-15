@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -56,6 +57,21 @@ class Article(Base):
     published_at = Column(DateTime, nullable=True)
     fetched_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    enriched_at = Column(DateTime, nullable=True)
+
+    location_name = Column(String(255), nullable=True)
+    location_country = Column(String(255), nullable=True)
+    location_confidence = Column(Float, nullable=True)
+    location_justification = Column(Text, nullable=True)
+
+    topic = Column(String(255), nullable=True)
+    topic_confidence = Column(Float, nullable=True)
+    topic_supporting_points = Column(Text, nullable=True)
+
+    category = Column(String(255), nullable=True)
+    subcategory = Column(String(255), nullable=True)
+    category_confidence = Column(Float, nullable=True)
+    category_rationale = Column(Text, nullable=True)
 
     feed = relationship("Feed", back_populates="articles")
     ingestion_logs = relationship(
