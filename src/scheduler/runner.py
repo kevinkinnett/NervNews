@@ -9,7 +9,12 @@ from src.config.settings import AppSettings, FeedSettings, load_settings
 from src.db.session import create_engine_from_url, create_session_factory, init_db
 from src.ingestion.extractor import ArticleExtractor
 from src.ingestion.rss import RSSIngestionService
-from src.llm import ArticleEnrichmentService, LLMClient, LLMClientError
+from src.llm import (
+    ArticleEnrichmentService,
+    LLMClient,
+    LLMClientError,
+    SummaryOrchestrationService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +31,7 @@ def _register_jobs(
     settings: AppSettings,
     ingestion_service: RSSIngestionService,
     enrichment_service: ArticleEnrichmentService,
+    summarization_service: SummaryOrchestrationService,
 ) -> None:
     for feed in settings.feeds:
         if not feed.enabled:
@@ -43,6 +49,18 @@ def _register_jobs(
         logger.info(
             "Scheduled feed %s (%s) every %ss", feed.name, feed.url, feed.schedule_seconds
         )
+
+    scheduler.add_job(
+        summarization_service.run_cycle,
+        "interval",
+        seconds=settings.summarization.interval_seconds,
+        id="summaries-hourly",
+        replace_existing=True,
+    )
+    logger.info(
+        "Scheduled summarisation job every %ss",
+        settings.summarization.interval_seconds,
+    )
 
 
 def _run_ingestion_job(
@@ -80,10 +98,21 @@ def run_scheduler(settings: AppSettings | None = None) -> BackgroundScheduler:
         session_factory=session_factory,
         llm_client=llm_client,
     )
+    summarization_service = SummaryOrchestrationService(
+        session_factory=session_factory,
+        llm_client=llm_client,
+        settings=settings.summarization,
+    )
     ingestion_service = RSSIngestionService(session_factory=session_factory, extractor=extractor)
 
     scheduler = BackgroundScheduler()
-    _register_jobs(scheduler, settings, ingestion_service, enrichment_service)
+    _register_jobs(
+        scheduler,
+        settings,
+        ingestion_service,
+        enrichment_service,
+        summarization_service,
+    )
     scheduler.start()
     logger.info("Scheduler started with %d jobs", len(scheduler.get_jobs()))
     return scheduler

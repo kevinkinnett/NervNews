@@ -54,6 +54,7 @@ class Article(Base):
     title = Column(String(512), nullable=True)
     summary = Column(Text, nullable=True)
     content = Column(Text, nullable=True)
+    brief_summary = Column(Text, nullable=True)
     published_at = Column(DateTime, nullable=True)
     fetched_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -103,4 +104,23 @@ class ArticleIngestionLog(Base):
         return f"<ArticleIngestionLog article_id={self.article_id}>"
 
 
-__all__ = ["Feed", "Article", "ArticleIngestionLog"]
+class Summary(Base):
+    __tablename__ = "summaries"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    window_start = Column(DateTime, nullable=False)
+    window_end = Column(DateTime, nullable=False)
+    article_ids_json = Column(Text, nullable=False)
+    draft_json = Column(Text, nullable=True)
+    final_json = Column(Text, nullable=True)
+    critic_feedback_json = Column(Text, nullable=True)
+    iteration_count = Column(Integer, nullable=False, default=0)
+    status = Column(String(50), nullable=False, default="draft")
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<Summary id={self.id} window=({self.window_start}, {self.window_end}) status={self.status}>"
+
+
+__all__ = ["Feed", "Article", "ArticleIngestionLog", "Summary"]
