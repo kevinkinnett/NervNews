@@ -196,5 +196,39 @@ class LLMClient:
                 raise
             return json.loads(match.group(0))
 
+    def ping(self, prompt: str = "Hello, are you there?") -> str:
+        """Perform a lightweight connectivity check against the LLM backend."""
+
+        client, error_cls = self._get_client()
+
+        try:
+            result = client.chat(
+                model=self._settings.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a status probe for NervNews. Reply concisely.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                options={
+                    "temperature": 0.0,
+                    "top_p": self._runtime.top_p,
+                    "repeat_penalty": self._runtime.repeat_penalty,
+                    "num_predict": min(64, self._runtime.max_tokens),
+                    "num_ctx": self._settings.context_window,
+                },
+            )
+        except error_cls as exc:  # pragma: no cover - backend dependency
+            raise LLMClientError(f"Ollama returned an error during connectivity test: {exc}") from exc
+        except Exception as exc:  # pragma: no cover - backend dependency
+            raise LLMClientError(f"Unexpected error during LLM connectivity test: {exc}") from exc
+
+        content = self._extract_content(result)
+        if not content:
+            raise LLMClientError("LLM returned an empty response")
+
+        return content
+
 
 __all__ = ["LLMClient", "LLMClientError"]

@@ -5,9 +5,10 @@ from typing import Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from src.config.settings import load_settings
 from src.config.store import (
     CONFIG_LLM_BASE_URL,
     CONFIG_LLM_MODEL,
@@ -15,10 +16,12 @@ from src.config.store import (
     CONFIG_LLM_PROVIDER,
     CONFIG_SUMMARIZATION_INTERVAL,
     CONFIG_ACTIVE_PROFILE_ID,
+    build_llm_settings,
     get_config,
     set_config,
 )
 from src.db.models import Feed, UserProfile
+from src.llm import LLMClient, LLMClientError
 from src.web.dependencies import get_session, get_templates
 
 router = APIRouter()
@@ -210,6 +213,38 @@ def update_profile(
         profile_id = new_profile.id
     set_config(session, CONFIG_ACTIVE_PROFILE_ID, profile_id)
     return _redirect("/admin", "Profile updated")
+
+
+@router.post("/settings/llm/test", response_class=JSONResponse)
+def test_llm_configuration(session: Session = Depends(get_session)) -> JSONResponse:
+    """Perform a round-trip check against the configured LLM runtime."""
+
+    settings = load_settings()
+
+    provider = get_config(session, CONFIG_LLM_PROVIDER, settings.llm.provider)
+    model_name = get_config(session, CONFIG_LLM_MODEL, settings.llm.model)
+    if model_name is None:
+        model_name = get_config(session, CONFIG_LLM_MODEL_PATH, settings.llm.model)
+    base_url = get_config(session, CONFIG_LLM_BASE_URL, settings.llm.base_url)
+
+    llm_settings = build_llm_settings(
+        settings.llm,
+        provider,
+        model_name,
+        base_url,
+    )
+
+    llm_client = LLMClient(llm_settings)
+
+    try:
+        reply = llm_client.ping("Status check: please confirm you are reachable.")
+    except LLMClientError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"ok": False, "error": str(exc)},
+        )
+
+    return JSONResponse(content={"ok": True, "response": reply})
 
 
 __all__ = ["router"]

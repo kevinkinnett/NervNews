@@ -107,6 +107,10 @@
         button.button-danger:hover {
             background: #b91c1c;
         }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
         .grid {
             display: grid;
             gap: 1.25rem;
@@ -120,6 +124,68 @@
             border-radius: 8px;
             padding: 0.75rem 1rem;
             margin-bottom: 1rem;
+        }
+        .status-indicator {
+            margin-left: 0.75rem;
+            font-weight: 600;
+        }
+        .status-idle {
+            color: #64748b;
+        }
+        .status-running {
+            color: #92400e;
+        }
+        .status-success {
+            color: #15803d;
+        }
+        .status-error {
+            color: #b91c1c;
+        }
+        .toast-container {
+            position: fixed;
+            top: 1.25rem;
+            right: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            z-index: 999;
+        }
+        .toast {
+            background: #1f2933;
+            color: #f8fafc;
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+            font-size: 0.95rem;
+            line-height: 1.4;
+            min-width: 240px;
+            max-width: 360px;
+            opacity: 0;
+            transform: translateY(-10px);
+            animation: toast-in 0.25s ease forwards;
+        }
+        .toast-success {
+            background: #166534;
+            color: #ecfdf5;
+        }
+        .toast-error {
+            background: #b91c1c;
+            color: #fef2f2;
+        }
+        .toast-hide {
+            opacity: 0;
+            transform: translateY(-6px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        @keyframes toast-in {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         footer {
             text-align: center;
@@ -144,5 +210,6 @@
 <footer>
     &copy; NervNews Operations Desk
 </footer>
+<div id="toast-container" class="toast-container" aria-live="polite"></div>
 </body>
 </html>

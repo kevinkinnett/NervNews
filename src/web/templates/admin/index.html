@@ -104,6 +104,11 @@
             <small>Example: model <code>qwen3:30b</code> served by Ollama on <code>http://127.0.0.1:11434</code>.</small>
             <button type="submit" style="margin-top:0.75rem;">Save configuration</button>
         </form>
+        <div class="llm-test-controls" style="margin-top:1rem;">
+            <button type="button" id="llm-test-button" class="secondary">Test connection</button>
+            <span id="llm-test-status" class="status-indicator status-idle" role="status">Idle</span>
+        </div>
+        <small>Runs a short probe asking the configured model to confirm it is reachable.</small>
     </div>
 </div>
 
@@ -119,4 +124,87 @@
         <button type="submit" style="margin-top:0.75rem;">Update profile</button>
     </form>
 </div>
+<script>
+    (function () {
+        const button = document.getElementById("llm-test-button");
+        const statusLabel = document.getElementById("llm-test-status");
+        const toastContainer = document.getElementById("toast-container");
+
+        if (!button || !statusLabel) {
+            return;
+        }
+
+        const stateClasses = {
+            idle: "status-idle",
+            running: "status-running",
+            success: "status-success",
+            error: "status-error",
+        };
+
+        const setStatus = (state, label) => {
+            const stateClass = stateClasses[state] || stateClasses.idle;
+            statusLabel.textContent = label;
+            statusLabel.className = `status-indicator ${stateClass}`;
+        };
+
+        const showToast = (message, variant) => {
+            if (!toastContainer) {
+                return;
+            }
+            const toast = document.createElement("div");
+            const tone = variant === "error" ? "toast-error" : "toast-success";
+            toast.className = `toast ${tone}`;
+            toast.textContent = message;
+            toastContainer.appendChild(toast);
+
+            window.setTimeout(() => {
+                toast.classList.add("toast-hide");
+            }, 4500);
+            window.setTimeout(() => {
+                toast.remove();
+            }, 5000);
+        };
+
+        button.addEventListener("click", async () => {
+            button.disabled = true;
+            setStatus("running", "Testing...");
+
+            try {
+                const response = await fetch("/admin/settings/llm/test", {
+                    method: "POST",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    credentials: "same-origin",
+                });
+
+                let payload = null;
+                try {
+                    payload = await response.json();
+                } catch (parseError) {
+                    payload = null;
+                }
+
+                if (!response.ok || !payload || payload.ok !== true) {
+                    const reason = (payload && (payload.error || payload.detail)) || response.statusText || "Request failed";
+                    setStatus("error", "Failed");
+                    showToast(`LLM test failed: ${reason}`, "error");
+                    return;
+                }
+
+                setStatus("success", "Success");
+                showToast(`LLM replied: ${payload.response}`, "success");
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "Unexpected error";
+                setStatus("error", "Failed");
+                showToast(`LLM test failed: ${message}`, "error");
+            } finally {
+                window.setTimeout(() => {
+                    setStatus("idle", "Idle");
+                }, 5000);
+                button.disabled = false;
+            }
+        });
+    })();
+</script>
 {% endblock %}
