@@ -10,6 +10,7 @@ llm:
   temperature: 0.2
   top_p: 0.95
   max_output_tokens: 256
+  debug_payloads: false
 
 summarization:
   interval_seconds: 3600
